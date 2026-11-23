@@ -15,6 +15,17 @@ dev = [
     "pre-commit>=3.7",
 ]
 
+notebooks = [
+    "datasets",
+    "pandas",
+    "jupyter",
+    "ipykernel",
+    "nbstripout",
+    "kagglehub",
+    "pillow",
+]
+
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
@@ -25,6 +36,9 @@ packages = []
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*" = ["BLE001", "E402"]
 
 [tool.black]
 line-length = 100
