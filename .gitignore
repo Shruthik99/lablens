@@ -224,3 +224,6 @@ __marimo__/
 
 docs/ai-usage.md
 
+.claude/settings.local.json
+
+AGENTS.md
