@@ -8,3 +8,5 @@ make setup | make lint | make test
 - Never edit anything in data/gold/ or tests/fixtures/expected/
 - Never change metric thresholds or delete tests to make CI pass
 - Small changes only; explain what you changed
+- No real patient data anywhere in this repo
+- Never send document text to external APIs; use the local model
