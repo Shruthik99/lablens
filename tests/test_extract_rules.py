@@ -1,3 +1,5 @@
+import logging
+
 from lablens.extract_rules import extract
 
 
@@ -90,3 +92,59 @@ def test_crlf_line_endings_keep_evidence_offsets():
     med = meds[0]
     assert med.evidence == "warfarin 5 mg PO daily"
     assert med.evidence == text[med.start : med.end]
+
+
+def test_frequency_captures_base_plus_prn():
+    text = "Acetaminophen 500mg PO Q6H PRN"
+    meds = extract(text)
+
+    assert len(meds) == 1
+    med = meds[0]
+    assert med.drug == "acetaminophen"
+    assert med.strength == "500mg"
+    assert med.route.lower() == "po"
+    assert med.frequency.lower() == "q6h prn"
+
+
+def test_inhaler_dosage_and_route():
+    text = "Albuterol Sulfate Inhaler 2 puffs Q4H PRN"
+    meds = extract(text)
+
+    assert len(meds) == 1
+    med = meds[0]
+    assert med.drug == "albuterol sulfate"
+    assert med.route.lower() == "inhaler"
+    assert med.dosage.lower() == "2 puffs"
+    assert med.frequency.lower() == "q4h prn"
+
+
+def test_insulin_glargine_subq_nightly():
+    text = "Insulin Glargine 10 units SubQ Nightly"
+    meds = extract(text)
+
+    assert len(meds) == 1
+    med = meds[0]
+    assert med.drug == "insulin glargine"
+    assert med.strength == "10 units"
+    assert med.route.lower() == "subq"
+    assert med.frequency.lower() == "nightly"
+
+
+def test_benzonatate_tid_prn():
+    text = "Benzonatate 100mg PO TID PRN Cough"
+    meds = extract(text)
+
+    assert len(meds) == 1
+    med = meds[0]
+    assert med.drug == "benzonatate"
+    assert med.strength == "100mg"
+    assert med.route.lower() == "po"
+    assert med.frequency.lower() == "tid prn"
+
+
+def test_debug_logging_captures_drug_match(caplog):
+    text = "lisinopril 10 mg PO daily"
+    with caplog.at_level(logging.DEBUG, logger="lablens.extract_rules"):
+        extract(text)
+
+    assert any("lisinopril" in record.getMessage() for record in caplog.records)
