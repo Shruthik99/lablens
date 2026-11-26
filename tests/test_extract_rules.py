@@ -160,7 +160,8 @@ def test_scan_resumes_after_a_multi_word_match_not_inside_it():
 
 
 def test_drug_name_is_not_matched_inside_a_longer_word():
-    assert extract("Discussed the patient's home environment and iron-rich foods") == []
+    """ "iron" must not be found inside "environment"."""
+    assert extract("Discussed the patient's home environment at length") == []
 
 
 def test_repeated_whitespace_inside_a_multi_word_name_still_matches():
