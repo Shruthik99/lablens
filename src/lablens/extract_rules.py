@@ -1,7 +1,10 @@
 """Rule-based medication extractor: finds known drug names and line-local attributes."""
 
+import csv
 import logging
 import re
+from dataclasses import dataclass
+from functools import lru_cache
 from importlib import resources
 
 from lablens.schema import Medication
@@ -50,63 +53,174 @@ def _tokenize(text: str) -> list[tuple[str, int, int]]:
     return [(m.group(0).lower(), m.start(), m.end()) for m in _TOKEN_RE.finditer(text)]
 
 
+HANDWRITTEN = "handwritten"
+INGREDIENTS = "ingredients"
+INGREDIENTS_CONTEXT = "ingredients_context"
+WITH_BRANDS = "with_brands"
+WITH_BRANDS_CONTEXT = "with_brands_context"
+
+LEXICON_MODES = (
+    HANDWRITTEN,
+    INGREDIENTS,
+    INGREDIENTS_CONTEXT,
+    WITH_BRANDS,
+    WITH_BRANDS_CONTEXT,
+)
+
+DEFAULT_LEXICON_MODE = HANDWRITTEN
+
+# Which RxNorm term types each mode admits, and whether ambiguous names need context.
+_MODE_TERM_TYPES = {
+    INGREDIENTS: ("IN", "PIN", ""),
+    INGREDIENTS_CONTEXT: ("IN", "PIN", ""),
+    WITH_BRANDS: ("IN", "PIN", "BN", ""),
+    WITH_BRANDS_CONTEXT: ("IN", "PIN", "BN", ""),
+}
+_CONTEXT_MODES = frozenset({INGREDIENTS_CONTEXT, WITH_BRANDS_CONTEXT})
+
+
+@dataclass(frozen=True)
+class LexiconEntry:
+    """One lexicon term with the provenance needed to trace a prediction back to RxNorm."""
+
+    name: str
+    rxcui: str | None
+    tty: str | None
+    ambiguous: bool
+
+
+def _read_resource(filename: str) -> str:
+    return resources.files("lablens").joinpath(f"resources/{filename}").read_text(encoding="utf-8")
+
+
 def _load_lexicon() -> list[str]:
-    data = (
-        resources.files("lablens")
-        .joinpath("resources/drug_lexicon.txt")
-        .read_text(encoding="utf-8")
-    )
+    data = _read_resource("drug_lexicon.txt")
     return [line.strip() for line in data.splitlines() if line.strip()]
 
 
-def _build_index(lexicon: list[str]) -> dict[tuple[str, ...], str]:
-    """Map each term's token tuple to the term, so lookup is exact and whitespace-agnostic.
+def _load_entries(mode: str) -> list[LexiconEntry]:
+    """Load the lexicon entries a mode admits.
 
-    Keyed by tokens rather than surface form, so a name appearing twice in the lexicon
-    collapses to one entry and cannot make the extractor emit the same drug twice.
+    "handwritten" reads the original committed list, so it stays byte-for-byte the
+    behaviour the extractor had before RxNorm was introduced.
     """
-    index: dict[tuple[str, ...], str] = {}
-    for term in lexicon:
-        key = tuple(token for token, _, _ in _tokenize(term))
+    if mode == HANDWRITTEN:
+        return [LexiconEntry(name, None, None, False) for name in _load_lexicon()]
+
+    allowed = _MODE_TERM_TYPES[mode]
+    entries = []
+    rows = csv.DictReader(_read_resource("rxnorm_lexicon.tsv").splitlines(), delimiter="\t")
+    for row in rows:
+        if row["tty"] not in allowed:
+            continue
+        entries.append(
+            LexiconEntry(
+                name=row["name"],
+                rxcui=row["rxcui"] or None,
+                tty=row["tty"] or None,
+                ambiguous=row["ambiguous"] == "1",
+            )
+        )
+    return entries
+
+
+@dataclass(frozen=True)
+class LexiconIndex:
+    """A mode's lexicon, prepared for matching."""
+
+    entries: dict[tuple[str, ...], LexiconEntry]
+    lengths_by_first_token: dict[str, list[int]]
+    requires_context: bool
+
+    def __len__(self) -> int:
+        return len(self.entries)
+
+
+def _build_index(entries: list[LexiconEntry], *, requires_context: bool) -> LexiconIndex:
+    """Index entries by token tuple, with candidate lengths bucketed by first token.
+
+    Keying by tokens rather than surface form means a name appearing twice collapses to
+    one entry and cannot make the extractor emit the same drug twice. Bucketing the
+    lengths keeps matching cheap: without it every position would try every length up to
+    the longest term in the lexicon (23 tokens for some RxNorm chemical names).
+    """
+    by_key: dict[tuple[str, ...], LexiconEntry] = {}
+    for entry in entries:
+        key = tuple(token for token, _, _ in _tokenize(entry.name))
         if key:
-            index.setdefault(key, term)
-    return index
+            by_key.setdefault(key, entry)
 
-
-def _build_lengths_by_first_token(index: dict[tuple[str, ...], str]) -> dict[str, list[int]]:
-    """Candidate term lengths per first token, longest first.
-
-    Without this, every position would try every length up to the longest term in the
-    lexicon (23 tokens for some RxNorm chemical names) instead of the few that can match.
-    """
     lengths: dict[str, set[int]] = {}
-    for key in index:
+    for key in by_key:
         lengths.setdefault(key[0], set()).add(len(key))
-    return {token: sorted(sizes, reverse=True) for token, sizes in lengths.items()}
+
+    return LexiconIndex(
+        entries=by_key,
+        lengths_by_first_token={
+            token: sorted(sizes, reverse=True) for token, sizes in lengths.items()
+        },
+        requires_context=requires_context,
+    )
+
+
+def _check_mode(mode: str) -> str:
+    if mode not in LEXICON_MODES:
+        raise ValueError(f"unknown lexicon mode {mode!r}; valid modes: {', '.join(LEXICON_MODES)}")
+    return mode
+
+
+# maxsize=2 rather than the default 128: each RxNorm index holds up to 23k terms, and the
+# comparison runner walks every mode in turn.
+@lru_cache(maxsize=2)
+def _get_index(mode: str) -> LexiconIndex:
+    _check_mode(mode)
+    return _build_index(_load_entries(mode), requires_context=mode in _CONTEXT_MODES)
+
+
+def clear_lexicon_cache() -> None:
+    """Drop cached indexes. Tests that swap a lexicon resource must call this."""
+    _get_index.cache_clear()
+
+
+def warm_lexicon_cache(mode: str = DEFAULT_LEXICON_MODE) -> None:
+    """Build a mode's index up front.
+
+    Callers that time extraction should warm first, or the first call pays the whole
+    index build and reports it as that case's extraction time.
+    """
+    _get_index(mode)
+
+
+def lexicon_size(mode: str = DEFAULT_LEXICON_MODE) -> int:
+    """Number of distinct terms a mode matches on."""
+    return len(_get_index(mode))
 
 
 _LEXICON = _load_lexicon()
-_INDEX = _build_index(_LEXICON)
-_LENGTHS_BY_FIRST_TOKEN = _build_lengths_by_first_token(_INDEX)
 
 
-def _find_drugs(line: str) -> list[tuple[str, int, int]]:
-    """Find lexicon terms in a line as (drug, start, end), leftmost-longest, non-overlapping.
+def _find_drugs(line: str, index: LexiconIndex) -> list[tuple[LexiconEntry, str, int, int]]:
+    """Find lexicon terms as (entry, drug, start, end), leftmost-longest, non-overlapping.
 
     Longest candidate first at each position, so "insulin glargine" wins over "insulin".
     The scan then advances past the whole match, so a multi-word term cannot be re-entered
     at its second token.
+
+    `drug` is the matched tokens joined by single spaces, not the canonical RxNorm name:
+    canonical names carry punctuation ("insulin, regular, human") that would not match
+    gold labels written as plain text.
     """
     tokens = _tokenize(line)
-    found: list[tuple[str, int, int]] = []
+    found: list[tuple[LexiconEntry, str, int, int]] = []
     i = 0
     while i < len(tokens):
-        for length in _LENGTHS_BY_FIRST_TOKEN.get(tokens[i][0], ()):
+        for length in index.lengths_by_first_token.get(tokens[i][0], ()):
             if i + length > len(tokens):
                 continue
             key = tuple(token for token, _, _ in tokens[i : i + length])
-            if key in _INDEX:
-                found.append((" ".join(key), tokens[i][1], tokens[i + length - 1][2]))
+            entry = index.entries.get(key)
+            if entry is not None:
+                found.append((entry, " ".join(key), tokens[i][1], tokens[i + length - 1][2]))
                 i += length
                 break
         else:
@@ -119,7 +233,8 @@ def _first_match(pattern: re.Pattern[str], line: str) -> str | None:
     return match.group(0) if match else None
 
 
-def extract(text: str) -> list[Medication]:
+def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
+    index = _get_index(_check_mode(mode))
     medications: list[Medication] = []
     offset = 0
 
@@ -131,10 +246,10 @@ def extract(text: str) -> list[Medication]:
 
         logger.debug("line %d: %r", line_number, line)
 
-        drug_matches = _find_drugs(line)
-        for i, (drug, drug_start, _drug_end) in enumerate(drug_matches):
+        drug_matches = _find_drugs(line, index)
+        for i, (_entry, drug, drug_start, _drug_end) in enumerate(drug_matches):
             segment_start = drug_start
-            segment_end = drug_matches[i + 1][1] if i + 1 < len(drug_matches) else len(line)
+            segment_end = drug_matches[i + 1][2] if i + 1 < len(drug_matches) else len(line)
             segment = line[segment_start:segment_end]
 
             logger.debug("drug match: %r at [%d, %d)", drug, segment_start, segment_end)

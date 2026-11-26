@@ -1,5 +1,8 @@
 import logging
 
+import pytest
+
+from lablens import extract_rules
 from lablens.extract_rules import extract
 
 
@@ -180,6 +183,41 @@ def test_evidence_offsets_survive_the_token_matcher():
     assert len(meds) == 2
     for med in meds:
         assert text[med.start : med.end] == med.evidence
+
+
+def test_unknown_lexicon_mode_is_rejected_with_the_valid_modes_listed():
+    with pytest.raises(ValueError, match="unknown lexicon mode"):
+        extract("lisinopril 10 mg", mode="ingredience")
+
+
+def test_each_mode_is_larger_than_the_one_before_it():
+    sizes = {mode: extract_rules.lexicon_size(mode) for mode in extract_rules.LEXICON_MODES}
+
+    assert sizes["handwritten"] == 50
+    assert sizes["ingredients"] > sizes["handwritten"]
+    assert sizes["with_brands"] > sizes["ingredients"]
+    assert sizes["ingredients_context"] == sizes["ingredients"]
+    assert sizes["with_brands_context"] == sizes["with_brands"]
+
+
+def test_rxnorm_modes_find_a_drug_the_handwritten_lexicon_never_had():
+    text = "Apixaban 5 mg PO BID"
+
+    assert extract(text, mode="handwritten") == []
+    assert [med.drug for med in extract(text, mode="ingredients")] == ["apixaban"]
+
+
+def test_brand_names_are_only_found_in_brand_modes():
+    text = "Take Lipitor 20 mg PO nightly"
+
+    assert extract(text, mode="ingredients") == []
+    assert [med.drug for med in extract(text, mode="with_brands")] == ["lipitor"]
+
+
+def test_handwritten_terms_rxnorm_lacks_still_match_in_rxnorm_modes():
+    """insulin and senna are not RxNorm IN/PIN names; dropping them would lose recall."""
+    assert [med.drug for med in extract("Insulin 10 units subq", mode="ingredients")] == ["insulin"]
+    assert [med.drug for med in extract("Senna 2 tablets nightly", mode="ingredients")] == ["senna"]
 
 
 def test_debug_logging_captures_drug_match(caplog):
