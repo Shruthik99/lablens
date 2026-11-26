@@ -26,6 +26,9 @@ def test_parse_args_defaults():
     assert args.seed == 42
     assert args.limit is None
     assert args.max_steps == -1
+    assert args.fp16 is False
+    assert args.gradient_checkpointing is True
+    assert args.git_commit is None
 
 
 def test_parse_args_overrides():
@@ -57,6 +60,10 @@ def test_parse_args_overrides():
             "16",
             "--max-steps",
             "4",
+            "--fp16",
+            "--no-gradient-checkpointing",
+            "--git-commit",
+            "deadbeef",
         ]
     )
 
@@ -73,6 +80,9 @@ def test_parse_args_overrides():
     assert args.seed == 7
     assert args.limit == 16
     assert args.max_steps == 4
+    assert args.fp16 is True
+    assert args.gradient_checkpointing is False
+    assert args.git_commit == "deadbeef"
 
 
 def test_sha256_file_matches_known_content(tmp_path):
@@ -131,6 +141,7 @@ def test_build_run_info_contains_all_settings_and_results(tmp_path):
         val_path,
         device="cpu",
         fp16=False,
+        git_commit="abc123",
         train_loss=1.23,
         val_loss=4.56,
         training_seconds=12.5,
@@ -140,12 +151,38 @@ def test_build_run_info_contains_all_settings_and_results(tmp_path):
     assert info["settings"]["limit"] == 16
     assert info["settings"]["max_steps"] == 4
     assert info["settings"]["fp16"] is False
+    assert info["settings"]["gradient_checkpointing"] is True
+    assert info["settings"]["git_commit_override"] is None
     assert info["data_sha256"]["train.jsonl"] == sha256_file(train_path)
     assert info["data_sha256"]["val.jsonl"] == sha256_file(val_path)
+    assert info["git_commit"] == "abc123"
     assert info["device"] == "cpu"
     assert info["train_loss"] == 1.23
     assert info["val_loss"] == 4.56
     assert info["training_seconds"] == 12.5
+
+
+def test_build_run_info_records_git_commit_override(tmp_path):
+    args = parse_args(["--git-commit", "override-sha"])
+    train_path = tmp_path / "train.jsonl"
+    val_path = tmp_path / "val.jsonl"
+    train_path.write_text('{"input": "a", "target": "b"}\n', encoding="utf-8")
+    val_path.write_text('{"input": "c", "target": "d"}\n', encoding="utf-8")
+
+    info = build_run_info(
+        args,
+        train_path,
+        val_path,
+        device="cpu",
+        fp16=False,
+        git_commit="override-sha",
+        train_loss=1.0,
+        val_loss=2.0,
+        training_seconds=1.0,
+    )
+
+    assert info["settings"]["git_commit_override"] == "override-sha"
+    assert info["git_commit"] == "override-sha"
 
 
 def test_write_run_info_writes_valid_json(tmp_path):

@@ -170,8 +170,10 @@ def _report(examples: list[dict[str, str]], stats: GroundingStats) -> None:
 
 
 def _write_jsonl(path: Path, examples: list[dict[str, str]]) -> None:
+    """Write LF-only, UTF-8 JSONL so the same input hashes identically on every OS
+    (an unspecified newline mode lets Windows translate "\\n" to "\\r\\n" on write)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.writelines(json.dumps(example) + "\n" for example in examples)
 
 

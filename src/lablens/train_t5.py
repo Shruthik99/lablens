@@ -3,8 +3,13 @@
 Runnable as: python -m lablens.train_t5 [--data data/t5] [--model google/flan-t5-base]
     [--out models/flan-t5] [--max-input 768] [--max-target 256] [--epochs 3] [--batch 8]
     [--grad-accum 2] [--lr 3e-4] [--warmup 0.06] [--seed 42] [--limit N] [--max-steps N]
+    [--fp16] [--no-gradient-checkpointing] [--git-commit SHA]
 
 Trains and evaluates only on the local machine/GPU; no document text or data leaves it.
+
+Trains in fp32 with the Adafactor optimizer by default: fp16 made T5 loss diverge to NaN
+in practice, so it's opt-in via --fp16. Gradient checkpointing is on by default to keep
+fp32 training within a 16 GB T4's memory.
 """
 
 from __future__ import annotations
@@ -40,6 +45,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--max-steps", type=int, default=-1, help="Stop after N steps (smoke test)."
     )
+    parser.add_argument(
+        "--fp16",
+        action="store_true",
+        default=False,
+        help="Train in fp16 (opt-in: this diverged for T5 in practice). Ignored on CPU.",
+    )
+    parser.add_argument(
+        "--gradient-checkpointing",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Trade compute for memory (default: on).",
+    )
+    parser.add_argument(
+        "--git-commit",
+        default=None,
+        help="Override the detected git commit (e.g. when running outside the repo, like Kaggle).",
+    )
     return parser.parse_args(argv if argv is not None else sys.argv[1:])
 
 
@@ -72,6 +94,7 @@ def build_run_info(
     val_path: Path,
     device: str,
     fp16: bool,
+    git_commit: str | None,
     train_loss: float | None,
     val_loss: float | None,
     training_seconds: float,
@@ -92,12 +115,14 @@ def build_run_info(
             "limit": args.limit,
             "max_steps": args.max_steps,
             "fp16": fp16,
+            "gradient_checkpointing": args.gradient_checkpointing,
+            "git_commit_override": args.git_commit,
         },
         "data_sha256": {
             "train.jsonl": sha256_file(train_path),
             "val.jsonl": sha256_file(val_path),
         },
-        "git_commit": get_git_commit(),
+        "git_commit": git_commit,
         "device": device,
         "train_loss": train_loss,
         "val_loss": val_loss,
@@ -138,7 +163,7 @@ def main(argv: list[str] | None = None) -> None:
     set_seed(args.seed)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    fp16 = device == "cuda"
+    fp16 = args.fp16 and device == "cuda"
 
     data_dir = Path(args.data)
     train_path = data_dir / "train.jsonl"
@@ -180,6 +205,8 @@ def main(argv: list[str] | None = None) -> None:
         # treated as a ratio of total steps, >= 1 as an absolute step count.
         warmup_steps=args.warmup,
         fp16=fp16,
+        optim="adafactor",
+        gradient_checkpointing=args.gradient_checkpointing,
         eval_strategy="epoch",
         save_strategy="no",
         logging_strategy="epoch",
@@ -206,12 +233,14 @@ def main(argv: list[str] | None = None) -> None:
     trainer.save_model(str(out_dir))
     tokenizer.save_pretrained(str(out_dir))
 
+    git_commit = args.git_commit or get_git_commit()
     info = build_run_info(
         args,
         train_path,
         val_path,
         device,
         fp16,
+        git_commit,
         train_result.training_loss,
         eval_metrics.get("eval_loss"),
         training_seconds,

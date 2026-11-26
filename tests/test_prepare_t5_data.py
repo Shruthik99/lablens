@@ -1,7 +1,11 @@
 import json
 
 from lablens.grounding import GroundingStats
-from lablens.prepare_t5_data import build_target_medications, ground_target_medications
+from lablens.prepare_t5_data import (
+    _write_jsonl,
+    build_target_medications,
+    ground_target_medications,
+)
 
 
 def test_builds_medications_from_dict_treatments():
@@ -164,3 +168,27 @@ def test_ground_target_medications_drops_when_parenthetical_text_also_ungrounded
     assert grounded == []
     assert stats.ungrounded_drugs == 1
     assert stats.rescued_drugs == 0
+
+
+def test_write_jsonl_uses_lf_only_no_crlf(tmp_path):
+    """An unspecified newline mode lets Windows translate "\\n" to "\\r\\n" on write,
+    which would make data_sha256 differ between Windows and Linux for identical content."""
+    path = tmp_path / "out.jsonl"
+    examples = [{"input": "a", "target": "b"}, {"input": "c", "target": "d"}]
+
+    _write_jsonl(path, examples)
+
+    raw = path.read_bytes()
+    assert b"\r" not in raw
+    assert raw.endswith(b"\n")
+
+
+def test_write_jsonl_is_byte_identical_across_runs(tmp_path):
+    examples = [{"input": "a", "target": "b"}, {"input": "c", "target": "d"}]
+    path_a = tmp_path / "a.jsonl"
+    path_b = tmp_path / "b.jsonl"
+
+    _write_jsonl(path_a, examples)
+    _write_jsonl(path_b, examples)
+
+    assert path_a.read_bytes() == path_b.read_bytes()
