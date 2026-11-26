@@ -42,6 +42,7 @@ train = [
     "datasets>=2.19",
     "torch>=2.2",
     "sentencepiece>=0.2",
+    "accelerate>=1.1.0",
 ]
 
 
