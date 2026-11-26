@@ -46,7 +46,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-lablens = ["resources/*.txt"]
+lablens = ["resources/*.txt", "static/*.html"]
 
 [tool.ruff]
 line-length = 100
