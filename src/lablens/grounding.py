@@ -17,6 +17,7 @@ class GroundingStats:
     ungrounded_drugs: int = 0
     ungrounded_values: int = 0
     rescued_drugs: int = 0
+    parse_failures: int = 0
 
 
 def normalize(text: str) -> str:
@@ -28,6 +29,18 @@ def is_drug_grounded(drug: str, evidence: str) -> bool:
     (e.g. "iron" must not match inside "environment")."""
     pattern = r"\b" + re.escape(normalize(drug)) + r"\b"
     return re.search(pattern, normalize(evidence)) is not None
+
+
+def find_evidence_line(text: str, drug: str) -> tuple[str, int, int] | None:
+    """Return (line, start, end) of the first line containing drug as a whole word/phrase
+    (case-insensitive), or None."""
+    offset = 0
+    for raw_line in text.split("\n"):
+        line = raw_line.removesuffix("\r")
+        if is_drug_grounded(drug, line):
+            return line, offset, offset + len(line)
+        offset += len(raw_line) + 1
+    return None
 
 
 def ground_value(

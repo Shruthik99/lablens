@@ -1,6 +1,6 @@
 """Evaluate a medication extractor against a labeled fixture.
 
-Runnable as: python -m lablens.evaluate <path-to-fixture.json> [--extractor {rules,llm}]
+Runnable as: python -m lablens.evaluate <path-to-fixture.json> [--extractor {rules,llm,t5}]
 """
 
 from __future__ import annotations
@@ -14,9 +14,10 @@ import sys
 import time
 from collections.abc import Callable
 from functools import partial
+from pathlib import Path
 from typing import Any
 
-from lablens import extract_llm, extract_rules
+from lablens import extract_llm, extract_rules, extract_t5
 from lablens.extract_rules import extract
 from lablens.schema import Medication
 
@@ -121,8 +122,10 @@ def summarize(case_results: list[dict[str, Any]]) -> dict[str, Any]:
         missed_drugs.extend(r["missed_drugs"])
         extra_drugs.extend(r["extra_drugs"])
 
+    # None (not 1.0) when a field was never compared, i.e. there were zero matched drugs:
+    # a ratio here would silently read as "perfect" when nothing was actually checked.
     field_accuracy = {
-        field: (field_correct[field] / field_total[field] if field_total[field] else 1.0)
+        field: (field_correct[field] / field_total[field] if field_total[field] else None)
         for field in FIELDS
     }
 
@@ -170,7 +173,14 @@ def format_report(metrics: dict[str, Any]) -> str:
         ),
         "Field accuracy (matched drugs only):",
     ]
-    lines.extend(f"  {field}: {metrics['field_accuracy'][field]:.3f}" for field in FIELDS)
+    lines.extend(
+        (
+            f"  {field}: n/a"
+            if metrics["field_accuracy"][field] is None
+            else f"  {field}: {metrics['field_accuracy'][field]:.3f}"
+        )
+        for field in FIELDS
+    )
 
     if "avg_seconds_per_case" in metrics:
         lines.append(f"Avg seconds/case: {metrics['avg_seconds_per_case']:.3f}")
@@ -180,6 +190,9 @@ def format_report(metrics: dict[str, Any]) -> str:
 
     if "ungrounded_drugs" in metrics:
         lines.append(f"Ungrounded drugs dropped: {metrics['ungrounded_drugs']}")
+
+    if "parse_failures" in metrics:
+        lines.append(f"Parse failures: {metrics['parse_failures']}")
 
     if metrics["mismatches"]:
         lines.append("")
@@ -224,6 +237,15 @@ def _git_commit() -> str | None:
     return result.stdout.strip()
 
 
+def _load_run_info(model_dir: str) -> dict[str, Any] | None:
+    """Load models/flan-t5/run_info.json (written by train_t5.py), or None if absent."""
+    path = Path(model_dir) / "run_info.json"
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def build_run_data(
     fixture_path: str,
     metrics: dict[str, Any],
@@ -234,6 +256,8 @@ def build_run_data(
     extractor: str = "rules",
     model: str | None = None,
     prompt_version: str | None = None,
+    model_dir: str | None = None,
+    t5_run_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the MLflow params/metrics payload for one evaluation run."""
     params: dict[str, Any] = {
@@ -251,6 +275,16 @@ def build_run_data(
         params["grounding"] = "on"
     if git_commit:
         params["git_commit"] = git_commit
+    if model_dir is not None:
+        params["model_dir"] = model_dir
+    if t5_run_info is not None:
+        if t5_run_info.get("git_commit"):
+            params["model_git_commit"] = t5_run_info["git_commit"]
+        data_sha256 = t5_run_info.get("data_sha256", {})
+        if "train.jsonl" in data_sha256:
+            params["model_train_sha256"] = data_sha256["train.jsonl"]
+        if "val.jsonl" in data_sha256:
+            params["model_val_sha256"] = data_sha256["val.jsonl"]
 
     run_metrics = {
         "precision": metrics["precision"],
@@ -258,7 +292,11 @@ def build_run_data(
         "f1": metrics["f1"],
     }
     run_metrics.update(
-        {f"field_accuracy_{field}": metrics["field_accuracy"][field] for field in FIELDS}
+        {
+            f"field_accuracy_{field}": metrics["field_accuracy"][field]
+            for field in FIELDS
+            if metrics["field_accuracy"][field] is not None
+        }
     )
     if "avg_seconds_per_case" in metrics:
         run_metrics["avg_seconds_per_case"] = metrics["avg_seconds_per_case"]
@@ -266,6 +304,8 @@ def build_run_data(
         run_metrics["ungrounded_values"] = metrics["ungrounded_values"]
     if "ungrounded_drugs" in metrics:
         run_metrics["ungrounded_drugs"] = metrics["ungrounded_drugs"]
+    if "parse_failures" in metrics:
+        run_metrics["parse_failures"] = metrics["parse_failures"]
 
     return {"params": params, "metrics": run_metrics}
 
@@ -277,9 +317,12 @@ def log_mlflow_run(
     *,
     extractor: str = "rules",
     model: str | None = None,
+    model_dir: str | None = None,
 ) -> None:
     """Log one evaluation run to MLflow. Imports mlflow lazily since it's an optional extra."""
     import mlflow
+
+    t5_run_info = _load_run_info(model_dir) if extractor == "t5" and model_dir else None
 
     run_data = build_run_data(
         fixture_path,
@@ -290,6 +333,8 @@ def log_mlflow_run(
         extractor=extractor,
         model=model,
         prompt_version=extract_llm.PROMPT_VERSION if extractor == "llm" else None,
+        model_dir=model_dir if extractor == "t5" else None,
+        t5_run_info=t5_run_info,
     )
 
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
@@ -305,7 +350,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser.add_argument("fixture", help="Path to a JSON file of {text, expected} cases.")
     parser.add_argument(
         "--extractor",
-        choices=["rules", "llm"],
+        choices=["rules", "llm", "t5"],
         default="rules",
         help="Which extractor to evaluate (default: rules).",
     )
@@ -313,6 +358,11 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         "--model",
         default="qwen3:4b",
         help="Ollama model to use when --extractor=llm (default: qwen3:4b).",
+    )
+    parser.add_argument(
+        "--model-dir",
+        default=extract_t5.DEFAULT_MODEL_DIR,
+        help=f"Fine-tuned model directory to use when --extractor=t5 (default: {extract_t5.DEFAULT_MODEL_DIR}).",
     )
     parser.add_argument(
         "--track",
@@ -324,9 +374,13 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     with open(args.fixture, encoding="utf-8") as f:
         cases = json.load(f)
 
-    stats = extract_llm.GroundingStats() if args.extractor == "llm" else None
+    stats = None
     if args.extractor == "llm":
+        stats = extract_llm.GroundingStats()
         extract_fn = partial(extract_llm.extract, model=args.model, stats=stats)
+    elif args.extractor == "t5":
+        stats = extract_t5.GroundingStats()
+        extract_fn = partial(extract_t5.extract, model_dir=args.model_dir, stats=stats)
     else:
         extract_fn = extract
 
@@ -334,6 +388,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     if stats is not None:
         metrics["ungrounded_values"] = stats.ungrounded_values
         metrics["ungrounded_drugs"] = stats.ungrounded_drugs
+        metrics["parse_failures"] = stats.parse_failures
 
     report = format_report(metrics)
     print(report)
@@ -345,6 +400,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
             report,
             extractor=args.extractor,
             model=args.model if args.extractor == "llm" else None,
+            model_dir=args.model_dir if args.extractor == "t5" else None,
         )
 
     return metrics

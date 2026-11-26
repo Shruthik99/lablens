@@ -8,7 +8,7 @@ import logging
 import urllib.error
 import urllib.request
 
-from lablens.grounding import GroundingStats, ground_value, is_drug_grounded
+from lablens.grounding import GroundingStats, find_evidence_line, ground_value
 from lablens.schema import Medication
 
 logger = logging.getLogger(__name__)
@@ -128,18 +128,6 @@ def _call_ollama(text: str, model: str) -> dict:
     return json.loads(body["message"]["content"])
 
 
-def _find_evidence(text: str, drug: str) -> tuple[str, int, int] | None:
-    """Return (line, start, end) of the first line containing drug as a whole word/phrase
-    (case-insensitive), or None."""
-    offset = 0
-    for raw_line in text.split("\n"):
-        line = raw_line.removesuffix("\r")
-        if is_drug_grounded(drug, line):
-            return line, offset, offset + len(line)
-        offset += len(raw_line) + 1
-    return None
-
-
 def extract(
     text: str, model: str = "qwen3:4b", stats: GroundingStats | None = None
 ) -> list[Medication]:
@@ -148,7 +136,7 @@ def extract(
     medications: list[Medication] = []
     for item in parsed.get("medications", []):
         drug = item.get("drug", "")
-        grounded = _find_evidence(text, drug)
+        grounded = find_evidence_line(text, drug)
         if grounded is None:
             logger.debug("dropping ungrounded drug: %r", drug)
             if stats is not None:

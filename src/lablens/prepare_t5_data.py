@@ -1,9 +1,9 @@
 """Build weak-label train/val data for fine-tuning Flan-T5 on medication extraction.
 
 Pulls notes and GPT-generated structured summaries from AGBonnet/augmented-clinical-notes,
-turning each summary's "treatments" entries into a JSON target the model should learn to
-produce from the (truncated) note text. Notes whose index is in HELD_OUT_NOTE_INDEXES are
-always skipped, since they're reserved for evaluation.
+turning each summary's "treatments" entries into a linearized target (see t5_format.py)
+the model should learn to produce from the (truncated) note text. Notes whose index is in
+HELD_OUT_NOTE_INDEXES are always skipped, since they're reserved for evaluation.
 
 Runnable as: python -m lablens.prepare_t5_data [--n 500] [--seed 42] [--val-frac 0.1] [--out data/t5]
 """
@@ -19,6 +19,7 @@ from typing import Any
 
 from lablens.grounding import GroundingStats, ground_value, is_drug_grounded
 from lablens.splits import HELD_OUT_NOTE_INDEXES
+from lablens.t5_format import linearize_medications, parse_medications
 
 _FLAN_T5_TOKENIZER = "google/flan-t5-base"
 _MAX_INPUT_TOKENS = 768
@@ -152,14 +153,14 @@ def _iter_examples(n: int, seed: int, stats: GroundingStats | None = None) -> li
         if not medications:
             continue
 
-        examples.append({"input": input_text, "target": json.dumps(medications)})
+        examples.append({"input": input_text, "target": linearize_medications(medications)})
         if len(examples) >= n:
             break
     return examples
 
 
 def _report(examples: list[dict[str, str]], stats: GroundingStats) -> None:
-    total_medications = sum(len(json.loads(ex["target"])) for ex in examples)
+    total_medications = sum(len(parse_medications(ex["target"]) or []) for ex in examples)
     avg_medications = total_medications / len(examples) if examples else 0.0
 
     print(f"Examples: {len(examples)}")
