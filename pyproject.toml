@@ -37,6 +37,13 @@ api = [
     "httpx>=0.27",
 ]
 
+train = [
+    "transformers>=4.40",
+    "datasets>=2.19",
+    "torch>=2.2",
+    "sentencepiece>=0.2",
+]
+
 
 [build-system]
 requires = ["setuptools>=68"]

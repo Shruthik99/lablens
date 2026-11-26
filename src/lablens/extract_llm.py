@@ -5,18 +5,15 @@ Request text is never sent to an external API: only to Ollama's local HTTP API.
 
 import json
 import logging
-import re
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
 
+from lablens.grounding import GroundingStats, ground_value, is_drug_grounded
 from lablens.schema import Medication
 
 logger = logging.getLogger(__name__)
 
 _OLLAMA_URL = "http://localhost:11434/api/chat"
-
-_WHITESPACE_RE = re.compile(r"\s+")
 
 PROMPT_VERSION = "v2"
 
@@ -102,30 +99,6 @@ class OllamaNotRunningError(RuntimeError):
     """Raised when the local Ollama server cannot be reached."""
 
 
-@dataclass
-class GroundingStats:
-    """Counts of medications/fields dropped by the grounding checks."""
-
-    ungrounded_drugs: int = 0
-    ungrounded_values: int = 0
-
-
-def _normalize(text: str) -> str:
-    return _WHITESPACE_RE.sub(" ", text.strip().lower())
-
-
-def _ground_value(value: str | None, evidence: str, stats: GroundingStats | None) -> str | None:
-    """Keep value only if it appears in evidence as a standalone token, not e.g. "5 mg" in "25 mg"."""
-    if value is None:
-        return None
-    pattern = r"(?<![0-9.])" + re.escape(_normalize(value)) + r"(?!\d)"
-    if re.search(pattern, _normalize(evidence)):
-        return value
-    if stats is not None:
-        stats.ungrounded_values += 1
-    return None
-
-
 def _call_ollama(text: str, model: str) -> dict:
     payload = {
         "model": model,
@@ -156,12 +129,12 @@ def _call_ollama(text: str, model: str) -> dict:
 
 
 def _find_evidence(text: str, drug: str) -> tuple[str, int, int] | None:
-    """Return (line, start, end) of the first line containing drug (case-insensitive), or None."""
-    drug_lower = drug.lower()
+    """Return (line, start, end) of the first line containing drug as a whole word/phrase
+    (case-insensitive), or None."""
     offset = 0
     for raw_line in text.split("\n"):
         line = raw_line.removesuffix("\r")
-        if drug_lower in line.lower():
+        if is_drug_grounded(drug, line):
             return line, offset, offset + len(line)
         offset += len(raw_line) + 1
     return None
@@ -186,11 +159,11 @@ def extract(
         medications.append(
             Medication(
                 drug=drug,
-                strength=_ground_value(item.get("strength"), line, stats),
-                dosage=_ground_value(item.get("dosage"), line, stats),
-                route=_ground_value(item.get("route"), line, stats),
-                frequency=_ground_value(item.get("frequency"), line, stats),
-                duration=_ground_value(item.get("duration"), line, stats),
+                strength=ground_value(item.get("strength"), line, stats),
+                dosage=ground_value(item.get("dosage"), line, stats),
+                route=ground_value(item.get("route"), line, stats),
+                frequency=ground_value(item.get("frequency"), line, stats),
+                duration=ground_value(item.get("duration"), line, stats),
                 evidence=line,
                 start=start,
                 end=end,
