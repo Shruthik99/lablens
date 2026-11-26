@@ -1,4 +1,4 @@
-.PHONY: setup lint test eval eval-track mlflow-ui
+.PHONY: setup lint test eval eval-track mlflow-ui api
 
 setup:
 	python -m pip install --upgrade pip
@@ -20,3 +20,6 @@ eval-track:
 
 mlflow-ui:
 	python -m mlflow ui --backend-store-uri sqlite:///mlflow.db
+
+api:
+	python -m uvicorn lablens.api:app --reload --port 8000
