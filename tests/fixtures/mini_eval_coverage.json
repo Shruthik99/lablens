@@ -1,0 +1,15 @@
+[
+  {"text": "Apixaban 5 mg PO BID", "expected": [{"drug": "apixaban", "strength": "5 mg", "dosage": null, "route": "PO", "frequency": "BID", "duration": null}]},
+  {"text": "Carvedilol 12.5 mg PO BID", "expected": [{"drug": "carvedilol", "strength": "12.5 mg", "dosage": null, "route": "PO", "frequency": "BID", "duration": null}]},
+  {"text": "Empagliflozin 10 mg PO daily", "expected": [{"drug": "empagliflozin", "strength": "10 mg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Montelukast 10 mg PO nightly", "expected": [{"drug": "montelukast", "strength": "10 mg", "dosage": null, "route": "PO", "frequency": "nightly", "duration": null}]},
+  {"text": "Spironolactone 25 mg PO daily", "expected": [{"drug": "spironolactone", "strength": "25 mg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Tamsulosin 0.4 mg PO nightly", "expected": [{"drug": "tamsulosin", "strength": "0.4 mg", "dosage": null, "route": "PO", "frequency": "nightly", "duration": null}]},
+  {"text": "Allopurinol 100 mg PO daily", "expected": [{"drug": "allopurinol", "strength": "100 mg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Escitalopram 10 mg PO daily", "expected": [{"drug": "escitalopram", "strength": "10 mg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Lipitor 20 mg PO nightly", "expected": [{"drug": "lipitor", "strength": "20 mg", "dosage": null, "route": "PO", "frequency": "nightly", "duration": null}]},
+  {"text": "Plavix 75 mg PO daily", "expected": [{"drug": "plavix", "strength": "75 mg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Synthroid 50 mcg PO daily", "expected": [{"drug": "synthroid", "strength": "50 mcg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Coumadin 5 mg PO daily", "expected": [{"drug": "coumadin", "strength": "5 mg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Eliquis 5 mg PO BID", "expected": [{"drug": "eliquis", "strength": "5 mg", "dosage": null, "route": "PO", "frequency": "BID", "duration": null}]}
+]
