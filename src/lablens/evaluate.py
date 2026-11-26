@@ -6,11 +6,14 @@ Runnable as: python -m lablens.evaluate <path-to-fixture.json>
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import subprocess
 import sys
 from typing import Any
 
+from lablens import extract_rules
 from lablens.extract_rules import extract
 from lablens.schema import Medication
 
@@ -176,16 +179,97 @@ def format_report(metrics: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(8192), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_commit() -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip()
+
+
+def build_run_data(
+    fixture_path: str,
+    metrics: dict[str, Any],
+    *,
+    lexicon_size: int,
+    fixture_sha256: str,
+    git_commit: str | None,
+) -> dict[str, Any]:
+    """Build the MLflow params/metrics payload for one evaluation run."""
+    params: dict[str, Any] = {
+        "extractor": "rules",
+        "lexicon_size": lexicon_size,
+        "fixture_path": fixture_path,
+        "fixture_sha256": fixture_sha256,
+    }
+    if git_commit:
+        params["git_commit"] = git_commit
+
+    run_metrics = {
+        "precision": metrics["precision"],
+        "recall": metrics["recall"],
+        "f1": metrics["f1"],
+    }
+    run_metrics.update(
+        {f"field_accuracy_{field}": metrics["field_accuracy"][field] for field in FIELDS}
+    )
+
+    return {"params": params, "metrics": run_metrics}
+
+
+def log_mlflow_run(fixture_path: str, metrics: dict[str, Any], report: str) -> None:
+    """Log one evaluation run to MLflow. Imports mlflow lazily since it's an optional extra."""
+    import mlflow
+
+    run_data = build_run_data(
+        fixture_path,
+        metrics,
+        lexicon_size=len(extract_rules._LEXICON),
+        fixture_sha256=_sha256_file(fixture_path),
+        git_commit=_git_commit(),
+    )
+
+    mlflow.set_tracking_uri("sqlite:///mlflow.db")
+    mlflow.set_experiment("medication-extraction")
+    with mlflow.start_run():
+        mlflow.log_params(run_data["params"])
+        mlflow.log_metrics(run_data["metrics"])
+        mlflow.log_text(report, "report.txt")
+
+
 def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser = argparse.ArgumentParser(description="Evaluate the rule-based medication extractor.")
     parser.add_argument("fixture", help="Path to a JSON file of {text, expected} cases.")
+    parser.add_argument(
+        "--track",
+        action="store_true",
+        help="Log this run to MLflow (sqlite:///mlflow.db, experiment 'medication-extraction').",
+    )
     args = parser.parse_args(argv if argv is not None else sys.argv[1:])
 
     with open(args.fixture, encoding="utf-8") as f:
         cases = json.load(f)
 
     metrics = evaluate_cases(cases)
-    print(format_report(metrics))
+    report = format_report(metrics)
+    print(report)
+
+    if args.track:
+        log_mlflow_run(args.fixture, metrics, report)
+
     return metrics
 
 
