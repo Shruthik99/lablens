@@ -1,4 +1,4 @@
-.PHONY: setup lint test eval eval-track mlflow-ui api
+.PHONY: setup lint test eval eval-track mlflow-ui api up down logs
 
 setup:
 	python -m pip install --upgrade pip
@@ -23,3 +23,12 @@ mlflow-ui:
 
 api:
 	python -m uvicorn lablens.api:app --reload --port 8000
+
+up:
+	docker compose up --build -d
+
+down:
+	docker compose down
+
+logs:
+	docker compose logs -f
