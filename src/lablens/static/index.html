@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lab Lens</title>
+<style>
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 800px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    color: #1a1a1a;
+  }
+  .notice {
+    background: #fff3cd;
+    border: 1px solid #ffe69c;
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+  }
+  textarea {
+    width: 100%;
+    min-height: 160px;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 0.5rem;
+  }
+  button {
+    margin-top: 0.75rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 1.5rem;
+    font-size: 0.85rem;
+  }
+  th, td {
+    border: 1px solid #ccc;
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #f2f2f2;
+  }
+  #status {
+    margin-top: 1rem;
+    font-size: 0.9rem;
+  }
+  .error {
+    color: #b00020;
+  }
+</style>
+</head>
+<body>
+  <div class="notice">
+    Research prototype. Not medical advice. Use only fictional or public example text.
+  </div>
+
+  <h1>Lab Lens</h1>
+
+  <textarea id="doc-text" placeholder="Paste discharge document text here..."></textarea>
+  <br />
+  <button id="extract-btn">Extract medications</button>
+
+  <div id="status"></div>
+  <div id="result"></div>
+
+  <script>
+    const textarea = document.getElementById("doc-text");
+    const button = document.getElementById("extract-btn");
+    const statusEl = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+
+    const columns = [
+      { key: "drug", label: "Drug" },
+      { key: "strength", label: "Strength" },
+      { key: "dosage", label: "Dosage" },
+      { key: "route", label: "Route" },
+      { key: "frequency", label: "Frequency" },
+      { key: "duration", label: "Duration" },
+      { key: "evidence", label: "Source text (evidence)" },
+    ];
+
+    function clearChildren(el) {
+      while (el.firstChild) {
+        el.removeChild(el.firstChild);
+      }
+    }
+
+    function renderStatus(message, isError) {
+      clearChildren(statusEl);
+      statusEl.classList.toggle("error", Boolean(isError));
+      statusEl.textContent = message;
+    }
+
+    function renderTable(medications) {
+      clearChildren(resultEl);
+
+      if (!medications || medications.length === 0) {
+        const p = document.createElement("p");
+        p.textContent = "No medications found";
+        resultEl.appendChild(p);
+        return;
+      }
+
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      for (const col of columns) {
+        const th = document.createElement("th");
+        th.textContent = col.label;
+        headerRow.appendChild(th);
+      }
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      const tbody = document.createElement("tbody");
+      for (const med of medications) {
+        const row = document.createElement("tr");
+        for (const col of columns) {
+          const td = document.createElement("td");
+          const value = med[col.key];
+          td.textContent = value === null || value === undefined ? "" : String(value);
+          row.appendChild(td);
+        }
+        tbody.appendChild(row);
+      }
+      table.appendChild(tbody);
+      resultEl.appendChild(table);
+    }
+
+    async function extractMedications() {
+      const text = textarea.value;
+      clearChildren(resultEl);
+      renderStatus("Extracting...", false);
+      button.disabled = true;
+
+      try {
+        const response = await fetch("/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          const detail =
+            data && data.detail
+              ? typeof data.detail === "string"
+                ? data.detail
+                : JSON.stringify(data.detail)
+              : `Request failed with status ${response.status}`;
+          renderStatus(detail, true);
+          return;
+        }
+
+        renderStatus("", false);
+        renderTable(data.medications);
+      } catch (err) {
+        renderStatus(err && err.message ? err.message : "Request failed", true);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    button.addEventListener("click", extractMedications);
+  </script>
+</body>
+</html>

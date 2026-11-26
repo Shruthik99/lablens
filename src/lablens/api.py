@@ -3,13 +3,18 @@
 Request text is never logged: it may contain protected health information.
 """
 
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from lablens.extract_rules import extract
 from lablens.schema import Medication
 
 app = FastAPI(title="Lab Lens API")
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 class ExtractRequest(BaseModel):
@@ -19,6 +24,11 @@ class ExtractRequest(BaseModel):
 class ExtractResponse(BaseModel):
     extractor: str
     medications: list[Medication]
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")
