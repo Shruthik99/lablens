@@ -163,10 +163,16 @@ def evaluate_cases(
 
 
 def format_report(metrics: dict[str, Any]) -> str:
+    # On an all-negative fixture nothing is predicted, so precision is 0/0. Reporting it
+    # as 0.000 reads as total failure when it is in fact a clean run, so say n/a instead.
+    # summarize() still stores 0.0: mlflow.log_metrics rejects None.
+    predicted_any = metrics["true_positives"] + metrics["false_positives"] > 0
+    precision = f"{metrics['precision']:.3f}" if predicted_any else "n/a"
+
     lines = [
         f"Cases evaluated: {metrics['num_cases']}",
         (
-            f"Drug detection: precision={metrics['precision']:.3f} "
+            f"Drug detection: precision={precision} "
             f"recall={metrics['recall']:.3f} f1={metrics['f1']:.3f} "
             f"(tp={metrics['true_positives']} fp={metrics['false_positives']} "
             f"fn={metrics['false_negatives']})"
