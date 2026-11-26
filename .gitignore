@@ -1,6 +1,10 @@
 # Project data
 data/
 
+# MLflow tracking
+mlflow.db
+mlruns/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
