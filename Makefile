@@ -1,4 +1,4 @@
-.PHONY: setup lint test
+.PHONY: setup lint test eval
 
 setup:
 	python -m pip install --upgrade pip
@@ -11,3 +11,6 @@ lint:
 
 test:
 	python -m pytest
+
+eval:
+	python -m lablens.evaluate tests/fixtures/mini_eval.json

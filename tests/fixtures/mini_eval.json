@@ -1,0 +1,12 @@
+[
+  {"text": "Ibuprofen 800 mg PO TID PRN", "expected": [{"drug": "ibuprofen", "strength": "800 mg", "dosage": null, "route": "PO", "frequency": "TID PRN", "duration": null}]},
+  {"text": "Metformin 500 mg by mouth twice daily", "expected": [{"drug": "metformin", "strength": "500 mg", "dosage": null, "route": "by mouth", "frequency": "twice daily", "duration": null}]},
+  {"text": "Warfarin 0.5 mg PO daily", "expected": [{"drug": "warfarin", "strength": "0.5 mg", "dosage": null, "route": "PO", "frequency": "daily", "duration": null}]},
+  {"text": "Aspirin 81 mg daily and metoprolol 25 mg BID", "expected": [{"drug": "aspirin", "strength": "81 mg", "dosage": null, "route": null, "frequency": "daily", "duration": null}, {"drug": "metoprolol", "strength": "25 mg", "dosage": null, "route": null, "frequency": "BID", "duration": null}]},
+  {"text": "Amoxicillin 500 mg PO TID x 7 days", "expected": [{"drug": "amoxicillin", "strength": "500 mg", "dosage": null, "route": "PO", "frequency": "TID", "duration": "x 7 days"}]},
+  {"text": "Insulin glargine 10 units SubQ nightly", "expected": [{"drug": "insulin glargine", "strength": null, "dosage": "10 units", "route": "SubQ", "frequency": "nightly", "duration": null}]},
+  {"text": "Albuterol sulfate inhaler 2 puffs Q4H PRN", "expected": [{"drug": "albuterol sulfate", "strength": null, "dosage": "2 puffs", "route": null, "frequency": "Q4H PRN", "duration": null}]},
+  {"text": "Apixaban 5 mg PO BID", "expected": [{"drug": "apixaban", "strength": "5 mg", "dosage": null, "route": "PO", "frequency": "BID", "duration": null}]},
+  {"text": "Prednisone 40 mg PO daily for 5 days, take 2 tablets", "expected": [{"drug": "prednisone", "strength": "40 mg", "dosage": "2 tablets", "route": "PO", "frequency": "daily", "duration": "for 5 days"}]},
+  {"text": "Follow up with your primary care doctor in one week.", "expected": []}
+]
