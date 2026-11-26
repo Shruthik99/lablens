@@ -142,6 +142,46 @@ def test_benzonatate_tid_prn():
     assert med.frequency.lower() == "tid prn"
 
 
+def test_longest_match_wins_over_the_shorter_name_it_starts_with():
+    """ "insulin glargine" must not be reported as a bare "insulin" plus a stray match."""
+    meds = extract("Insulin glargine 10 units SubQ nightly")
+
+    assert [med.drug for med in meds] == ["insulin glargine"]
+
+
+def test_scan_resumes_after_a_multi_word_match_not_inside_it():
+    """Re-entering at "sulfate" would emit a second, overlapping medication."""
+    meds = extract("Albuterol sulfate inhaler 2 puffs Q4H PRN")
+
+    assert [med.drug for med in meds] == ["albuterol sulfate"]
+
+
+def test_drug_name_is_not_matched_inside_a_longer_word():
+    assert extract("Discussed the patient's home environment and iron-rich foods") == []
+
+
+def test_repeated_whitespace_inside_a_multi_word_name_still_matches():
+    meds = extract("Ferrous  sulfate 325 mg PO daily")
+
+    assert [med.drug for med in meds] == ["ferrous sulfate"]
+    assert meds[0].strength == "325 mg"
+
+
+def test_drug_name_is_found_when_hyphenated_onto_another_word():
+    meds = extract("Patient is on a metformin-containing regimen")
+
+    assert [med.drug for med in meds] == ["metformin"]
+
+
+def test_evidence_offsets_survive_the_token_matcher():
+    text = "Ferrous  sulfate 325 mg PO daily\nwarfarin 5 mg PO daily"
+    meds = extract(text)
+
+    assert len(meds) == 2
+    for med in meds:
+        assert text[med.start : med.end] == med.evidence
+
+
 def test_debug_logging_captures_drug_match(caplog):
     text = "lisinopril 10 mg PO daily"
     with caplog.at_level(logging.DEBUG, logger="lablens.extract_rules"):
