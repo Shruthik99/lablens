@@ -254,6 +254,26 @@ def test_build_run_data_includes_params_and_metrics():
     }
 
 
+def test_build_run_data_includes_grounding_for_llm_extractor():
+    metrics = summarize([])
+    metrics["ungrounded_values"] = 3
+    metrics["ungrounded_drugs"] = 1
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        fixture_sha256="deadbeef",
+        git_commit=None,
+        extractor="llm",
+        model="qwen3:4b",
+        prompt_version="v2",
+    )
+
+    assert run_data["params"]["grounding"] == "on"
+    assert run_data["metrics"]["ungrounded_values"] == 3
+    assert run_data["metrics"]["ungrounded_drugs"] == 1
+
+
 def test_build_run_data_omits_git_commit_when_unavailable():
     metrics = summarize([])
 
