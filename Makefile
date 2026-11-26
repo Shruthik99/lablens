@@ -1,4 +1,4 @@
-.PHONY: setup lint test eval eval-track eval-llm mlflow-ui api up down logs
+.PHONY: setup lint test eval eval-track eval-llm eval-t5 mlflow-ui api up down logs
 
 setup:
 	python -m pip install --upgrade pip
@@ -20,6 +20,9 @@ eval-track:
 
 eval-llm:
 	python -m lablens.evaluate tests/fixtures/mini_eval.json --extractor llm --track
+
+eval-t5:
+	python -m lablens.evaluate tests/fixtures/mini_eval.json --extractor t5 --track
 
 mlflow-ui:
 	python -m mlflow ui --backend-store-uri sqlite:///mlflow.db

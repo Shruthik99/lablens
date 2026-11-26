@@ -43,6 +43,25 @@ def test_perfect_match():
     assert all(acc == 1.0 for acc in metrics["field_accuracy"].values())
 
 
+def test_field_accuracy_is_none_when_no_drugs_matched():
+    expected = [
+        {
+            "drug": "aspirin",
+            "strength": "81 mg",
+            "dosage": None,
+            "route": None,
+            "frequency": None,
+            "duration": None,
+        }
+    ]
+    result = score_case("text", expected, predicted=[])
+
+    metrics = summarize([result])
+
+    assert metrics["false_negatives"] == 1
+    assert all(acc is None for acc in metrics["field_accuracy"].values())
+
+
 def test_one_missed_drug():
     expected = [
         {
@@ -207,6 +226,62 @@ def test_format_report_smoke():
     assert "strength" in report
 
 
+def test_format_report_shows_na_for_field_accuracy_when_no_matches():
+    metrics = summarize(
+        [
+            score_case(
+                "text",
+                [
+                    {
+                        "drug": "aspirin",
+                        "strength": "81 mg",
+                        "dosage": None,
+                        "route": None,
+                        "frequency": None,
+                        "duration": None,
+                    }
+                ],
+                [],
+            )
+        ]
+    )
+
+    report = format_report(metrics)
+
+    assert "strength: n/a" in report
+
+
+def test_build_run_data_omits_field_accuracy_when_no_matches():
+    metrics = summarize(
+        [
+            score_case(
+                "text",
+                [
+                    {
+                        "drug": "aspirin",
+                        "strength": "81 mg",
+                        "dosage": None,
+                        "route": None,
+                        "frequency": None,
+                        "duration": None,
+                    }
+                ],
+                [],
+            )
+        ]
+    )
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        lexicon_size=1,
+        fixture_sha256="deadbeef",
+        git_commit=None,
+    )
+
+    assert not any(key.startswith("field_accuracy_") for key in run_data["metrics"])
+
+
 def test_build_run_data_includes_params_and_metrics():
     metrics = summarize(
         [
@@ -286,3 +361,48 @@ def test_build_run_data_omits_git_commit_when_unavailable():
     )
 
     assert "git_commit" not in run_data["params"]
+
+
+def test_build_run_data_includes_model_dir_and_run_info_for_t5_extractor():
+    metrics = summarize([])
+    metrics["ungrounded_drugs"] = 2
+    metrics["parse_failures"] = 1
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        fixture_sha256="deadbeef",
+        git_commit=None,
+        extractor="t5",
+        model_dir="models/flan-t5",
+        t5_run_info={
+            "git_commit": "abc123",
+            "data_sha256": {"train.jsonl": "trainhash", "val.jsonl": "valhash"},
+        },
+    )
+
+    assert run_data["params"]["model_dir"] == "models/flan-t5"
+    assert run_data["params"]["model_git_commit"] == "abc123"
+    assert run_data["params"]["model_train_sha256"] == "trainhash"
+    assert run_data["params"]["model_val_sha256"] == "valhash"
+    assert run_data["metrics"]["parse_failures"] == 1
+    assert run_data["metrics"]["ungrounded_drugs"] == 2
+
+
+def test_build_run_data_omits_model_run_info_fields_when_unavailable():
+    metrics = summarize([])
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        fixture_sha256="deadbeef",
+        git_commit=None,
+        extractor="t5",
+        model_dir="models/flan-t5",
+        t5_run_info=None,
+    )
+
+    assert run_data["params"]["model_dir"] == "models/flan-t5"
+    assert "model_git_commit" not in run_data["params"]
+    assert "model_train_sha256" not in run_data["params"]
+    assert "model_val_sha256" not in run_data["params"]
