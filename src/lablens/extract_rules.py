@@ -326,7 +326,7 @@ def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
         if index.requires_context:
             drug_matches = _apply_context_gate(line, drug_matches)
 
-        for i, (_entry, drug, drug_start, _drug_end) in enumerate(drug_matches):
+        for i, (entry, drug, drug_start, _drug_end) in enumerate(drug_matches):
             segment_start = drug_start
             segment_end = drug_matches[i + 1][2] if i + 1 < len(drug_matches) else len(line)
             segment = line[segment_start:segment_end]
@@ -357,6 +357,8 @@ def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
                     route=route,
                     frequency=frequency,
                     duration=duration,
+                    rxcui=entry.rxcui,
+                    tty=entry.tty,
                     evidence=line,
                     start=line_start,
                     end=line_end,

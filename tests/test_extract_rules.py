@@ -286,6 +286,20 @@ def test_a_gated_out_name_does_not_steal_the_previous_drugs_attributes():
     assert meds[0].frequency.lower() == "nightly"
 
 
+def test_rxnorm_modes_carry_the_rxcui_and_term_type_not_just_the_name():
+    meds = extract("Lisinopril 10 mg PO daily", mode="ingredients")
+
+    assert meds[0].rxcui == "29046"
+    assert meds[0].tty == "IN"
+
+
+def test_handwritten_mode_leaves_provenance_empty_rather_than_inventing_it():
+    meds = extract("Lisinopril 10 mg PO daily", mode="handwritten")
+
+    assert meds[0].rxcui is None
+    assert meds[0].tty is None
+
+
 def test_debug_logging_captures_drug_match(caplog):
     text = "lisinopril 10 mg PO daily"
     with caplog.at_level(logging.DEBUG, logger="lablens.extract_rules"):
