@@ -1,4 +1,4 @@
-.PHONY: setup lint test eval eval-track eval-llm eval-t5 mlflow-ui api up down logs
+.PHONY: setup lint test build-lexicon eval eval-track eval-llm eval-t5 mlflow-ui api up down logs
 
 setup:
 	python -m pip install --upgrade pip
@@ -11,6 +11,9 @@ lint:
 
 test:
 	python -m pytest
+
+build-lexicon:
+	python -m lablens.rxnorm
 
 eval:
 	python -m lablens.evaluate tests/fixtures/mini_eval.json
