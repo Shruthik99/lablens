@@ -1,4 +1,4 @@
-from lablens.evaluate import format_report, score_case, summarize
+from lablens.evaluate import build_run_data, format_report, score_case, summarize
 from lablens.schema import Medication
 
 
@@ -205,3 +205,64 @@ def test_format_report_smoke():
     report = format_report(metrics)
     assert "precision=" in report
     assert "strength" in report
+
+
+def test_build_run_data_includes_params_and_metrics():
+    metrics = summarize(
+        [
+            score_case(
+                "text",
+                [
+                    {
+                        "drug": "aspirin",
+                        "strength": "81 mg",
+                        "dosage": None,
+                        "route": "PO",
+                        "frequency": "daily",
+                        "duration": None,
+                    }
+                ],
+                [make_med("aspirin", strength="81 mg", route="PO", frequency="daily")],
+            )
+        ]
+    )
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        lexicon_size=42,
+        fixture_sha256="deadbeef",
+        git_commit="abc1234",
+    )
+
+    assert run_data["params"] == {
+        "extractor": "rules",
+        "lexicon_size": 42,
+        "fixture_path": "tests/fixtures/mini_eval.json",
+        "fixture_sha256": "deadbeef",
+        "git_commit": "abc1234",
+    }
+    assert run_data["metrics"] == {
+        "precision": metrics["precision"],
+        "recall": metrics["recall"],
+        "f1": metrics["f1"],
+        "field_accuracy_strength": metrics["field_accuracy"]["strength"],
+        "field_accuracy_dosage": metrics["field_accuracy"]["dosage"],
+        "field_accuracy_route": metrics["field_accuracy"]["route"],
+        "field_accuracy_frequency": metrics["field_accuracy"]["frequency"],
+        "field_accuracy_duration": metrics["field_accuracy"]["duration"],
+    }
+
+
+def test_build_run_data_omits_git_commit_when_unavailable():
+    metrics = summarize([])
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        lexicon_size=1,
+        fixture_sha256="deadbeef",
+        git_commit=None,
+    )
+
+    assert "git_commit" not in run_data["params"]
