@@ -349,6 +349,40 @@ def test_build_run_data_includes_grounding_for_llm_extractor():
     assert run_data["metrics"]["ungrounded_drugs"] == 1
 
 
+def test_build_run_data_records_the_lexicon_mode_and_its_provenance():
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        summarize([]),
+        lexicon_size=18369,
+        lexicon_mode="ingredients_context",
+        lexicon_sha256="cafe1234",
+        rxnorm_version="02-Nov-2026",
+        fixture_sha256="deadbeef",
+        git_commit=None,
+    )
+
+    assert run_data["params"]["lexicon_mode"] == "ingredients_context"
+    assert run_data["params"]["lexicon_size"] == 18369
+    assert run_data["params"]["lexicon_sha256"] == "cafe1234"
+    assert run_data["params"]["rxnorm_version"] == "02-Nov-2026"
+
+
+def test_build_run_data_omits_lexicon_params_for_non_rules_extractors():
+    """A lexicon mode on an LLM run would be a meaningless param."""
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        summarize([]),
+        fixture_sha256="deadbeef",
+        git_commit=None,
+        extractor="llm",
+        model="qwen3:4b",
+    )
+
+    assert "lexicon_mode" not in run_data["params"]
+    assert "lexicon_sha256" not in run_data["params"]
+    assert "rxnorm_version" not in run_data["params"]
+
+
 def test_build_run_data_omits_git_commit_when_unavailable():
     metrics = summarize([])
 

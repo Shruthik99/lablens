@@ -163,10 +163,16 @@ def evaluate_cases(
 
 
 def format_report(metrics: dict[str, Any]) -> str:
+    # On an all-negative fixture nothing is predicted, so precision is 0/0. Reporting it
+    # as 0.000 reads as total failure when it is in fact a clean run, so say n/a instead.
+    # summarize() still stores 0.0: mlflow.log_metrics rejects None.
+    predicted_any = metrics["true_positives"] + metrics["false_positives"] > 0
+    precision = f"{metrics['precision']:.3f}" if predicted_any else "n/a"
+
     lines = [
         f"Cases evaluated: {metrics['num_cases']}",
         (
-            f"Drug detection: precision={metrics['precision']:.3f} "
+            f"Drug detection: precision={precision} "
             f"recall={metrics['recall']:.3f} f1={metrics['f1']:.3f} "
             f"(tp={metrics['true_positives']} fp={metrics['false_positives']} "
             f"fn={metrics['false_negatives']})"
@@ -251,6 +257,9 @@ def build_run_data(
     metrics: dict[str, Any],
     *,
     lexicon_size: int | None = None,
+    lexicon_mode: str | None = None,
+    lexicon_sha256: str | None = None,
+    rxnorm_version: str | None = None,
     fixture_sha256: str,
     git_commit: str | None,
     extractor: str = "rules",
@@ -267,6 +276,12 @@ def build_run_data(
     }
     if lexicon_size is not None:
         params["lexicon_size"] = lexicon_size
+    if lexicon_mode is not None:
+        params["lexicon_mode"] = lexicon_mode
+    if lexicon_sha256 is not None:
+        params["lexicon_sha256"] = lexicon_sha256
+    if rxnorm_version is not None:
+        params["rxnorm_version"] = rxnorm_version
     if model is not None:
         params["model"] = model
     if prompt_version is not None:
@@ -318,16 +333,22 @@ def log_mlflow_run(
     extractor: str = "rules",
     model: str | None = None,
     model_dir: str | None = None,
+    lexicon_mode: str | None = None,
 ) -> None:
     """Log one evaluation run to MLflow. Imports mlflow lazily since it's an optional extra."""
     import mlflow
 
     t5_run_info = _load_run_info(model_dir) if extractor == "t5" and model_dir else None
+    is_rules = extractor == "rules"
+    mode = lexicon_mode or extract_rules.DEFAULT_LEXICON_MODE
 
     run_data = build_run_data(
         fixture_path,
         metrics,
-        lexicon_size=len(extract_rules._LEXICON) if extractor == "rules" else None,
+        lexicon_size=extract_rules.lexicon_size(mode) if is_rules else None,
+        lexicon_mode=mode if is_rules else None,
+        lexicon_sha256=extract_rules.lexicon_sha256(mode) if is_rules else None,
+        rxnorm_version=extract_rules.rxnorm_version(mode) if is_rules else None,
         fixture_sha256=_sha256_file(fixture_path),
         git_commit=_git_commit(),
         extractor=extractor,
@@ -365,6 +386,15 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         help=f"Fine-tuned model directory to use when --extractor=t5 (default: {extract_t5.DEFAULT_MODEL_DIR}).",
     )
     parser.add_argument(
+        "--lexicon-mode",
+        choices=list(extract_rules.LEXICON_MODES),
+        default=extract_rules.DEFAULT_LEXICON_MODE,
+        help=(
+            "Which lexicon the rules extractor matches on "
+            f"(default: {extract_rules.DEFAULT_LEXICON_MODE})."
+        ),
+    )
+    parser.add_argument(
         "--track",
         action="store_true",
         help="Log this run to MLflow (sqlite:///mlflow.db, experiment 'medication-extraction').",
@@ -382,7 +412,9 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         stats = extract_t5.GroundingStats()
         extract_fn = partial(extract_t5.extract, model_dir=args.model_dir, stats=stats)
     else:
-        extract_fn = extract
+        # Build the index before timing starts, or the first case is billed for it.
+        extract_rules.warm_lexicon_cache(args.lexicon_mode)
+        extract_fn = partial(extract, mode=args.lexicon_mode)
 
     metrics = evaluate_cases(cases, extract_fn)
     if stats is not None:
@@ -401,6 +433,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
             extractor=args.extractor,
             model=args.model if args.extractor == "llm" else None,
             model_dir=args.model_dir if args.extractor == "t5" else None,
+            lexicon_mode=args.lexicon_mode if args.extractor == "rules" else None,
         )
 
     return metrics

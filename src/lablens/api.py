@@ -9,10 +9,13 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from lablens.extract_rules import extract
+from lablens.extract_rules import extract, warm_lexicon_cache
 from lablens.schema import Medication
 
 app = FastAPI(title="Lab Lens API")
+
+# Build the lexicon index at import, so the first request does not pay for it.
+warm_lexicon_cache()
 
 STATIC_DIR = Path(__file__).parent / "static"
 

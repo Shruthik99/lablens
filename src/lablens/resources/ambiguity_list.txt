@@ -1,0 +1,76 @@
+# Ambiguous drug names: RxNorm terms that are also ordinary words in discharge documents.
+#
+# These are NOT deleted from the lexicon. Many are real medications (iron, oxygen,
+# potassium). They are flagged so the extractor only emits them when the surrounding
+# text shows clinical context: a dose, a route, or a medication verb nearby.
+# See docs/decisions/0001-rxnorm-lexicon-ambiguity.md.
+#
+# Inclusion rule: the term commonly appears in a discharge document in a NON-medication
+# sense (lab panel, vital sign, diet advice, material, device). Terms that are only ever
+# drugs (niacin, biotin, tylenol) are deliberately absent: flagging them would cost recall
+# for no precision gain.
+#
+# Every entry below was verified to exist in RxNorm IN/PIN/BN (version 02-Nov-2026).
+# One name per line, lowercase. Blank lines and lines starting with # are ignored.
+
+# Electrolytes and chemistry panel
+sodium
+potassium
+calcium
+magnesium
+phosphorus
+glucose
+creatinine
+urea
+ammonia
+
+# Vital signs and respiratory
+oxygen
+air
+nitrogen
+hydrogen
+helium
+
+# Diet and nutrition advice
+water
+iron
+zinc
+fiber
+starch
+lactose
+sucrose
+
+# Metals and materials (lab values, devices, leads, poisoning)
+lead
+gold
+silver
+tin
+copper
+aluminum
+barium
+bismuth
+boron
+mercury
+nickel
+cobalt
+chromium
+selenium
+manganese
+bromine
+chlorine
+iodine
+sulfur
+
+# Substances named in social and dietary history
+ethanol
+nicotine
+caffeine
+
+# Other ordinary words
+charcoal
+gelatin
+collagen
+creatine
+
+# Brand names that collide with ordinary English
+today
