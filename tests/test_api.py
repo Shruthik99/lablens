@@ -5,6 +5,13 @@ from lablens.api import app
 client = TestClient(app)
 
 
+def test_index_page_served():
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert "Research prototype. Not medical advice." in response.text
+
+
 def test_health():
     response = client.get("/health")
 
