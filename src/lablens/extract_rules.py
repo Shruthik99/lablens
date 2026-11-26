@@ -42,6 +42,31 @@ _DOSAGE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Dose units for the ambiguity gate only, kept separate from _STRENGTH_RE so widening it
+# cannot change extracted field values. The ambiguous names are mostly electrolytes, which
+# are dosed in mEq and mmol; without these, "Potassium 20 mEq PO daily" would be discarded.
+# Deliberately no "%": "oxygen saturation 97%" would otherwise read as a dose.
+_GATE_DOSE_RE = re.compile(
+    r"\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|units?|meq|mmol|iu|puffs?|tablets?|capsules?|ml|drops?)\b",
+    re.IGNORECASE,
+)
+
+# The seven medication verbs, with the inflections that actually appear in discharge text:
+# "Start lisinopril" is rarer than "Started on lisinopril".
+# Note "increase"/"decrease" are deliberately absent. They are dose-change verbs that
+# always carry a dose anyway, and including them promotes diet advice such as
+# "increase water and iron rich foods" into medications.
+_MED_VERB_RE = re.compile(
+    r"\b(?:start(?:s|ed|ing)?|stop(?:s|ped|ping)?|continu(?:e|es|ed|ing)|"
+    r"tak(?:e|es|en|ing)|prescrib(?:e|es|ed|ing)|discontinu(?:e|es|ed|ing)|"
+    r"hold(?:s|ing)?|held)\b",
+    re.IGNORECASE,
+)
+
+# How far the gate looks for supporting context, in tokens.
+_GATE_TOKENS_AFTER = 4
+_GATE_TOKENS_BEFORE = 3
+
 
 # Hyphens and apostrophes are separators, not part of tokens. That keeps "metformin"
 # findable inside "metformin-containing" (which the old \b alternation also matched) and
@@ -228,6 +253,57 @@ def _find_drugs(line: str, index: LexiconIndex) -> list[tuple[LexiconEntry, str,
     return found
 
 
+def _has_clinical_context(line: str, tokens: list[tuple[str, int, int]], i: int, length: int):
+    """True if an ambiguous name at tokens[i:i+length] is used as a medication here.
+
+    Looks at nearby tokens rather than the whole sentence. A sentence window is both too
+    permissive and too fragile: in "Patient is iron deficient; started on ferrous sulfate
+    325 mg PO daily" the dose belongs to a different drug, and splitting on "." cuts
+    "amlodipine 0.5 mg" in half.
+
+    A dose or route may follow the name ("Potassium 20 mEq PO daily"), or a medication
+    verb may precede it ("You were prescribed iron"). No dose is required.
+    """
+    end = i + length
+
+    after_tokens = tokens[end : end + _GATE_TOKENS_AFTER]
+    if after_tokens:
+        after = line[tokens[end - 1][2] : after_tokens[-1][2]]
+        if _GATE_DOSE_RE.search(after) or _ROUTE_RE.search(after):
+            return True
+
+    before_tokens = tokens[max(0, i - _GATE_TOKENS_BEFORE) : i]
+    if before_tokens:
+        before = line[before_tokens[0][1] : tokens[i][1]]
+        if _MED_VERB_RE.search(before):
+            return True
+
+    return False
+
+
+def _apply_context_gate(
+    line: str, matches: list[tuple[LexiconEntry, str, int, int]]
+) -> list[tuple[LexiconEntry, str, int, int]]:
+    """Drop ambiguous names that no nearby clinical context supports.
+
+    Runs before attribute windows are computed: a window ends at the next match's start,
+    so a name dropped afterwards would still have truncated the previous drug's window.
+    """
+    tokens = _tokenize(line)
+    starts = {token[1]: index for index, token in enumerate(tokens)}
+
+    kept = []
+    for entry, drug, start, end in matches:
+        if entry.ambiguous:
+            i = starts[start]
+            length = len(drug.split(" "))
+            if not _has_clinical_context(line, tokens, i, length):
+                logger.debug("ambiguous name %r dropped: no clinical context", drug)
+                continue
+        kept.append((entry, drug, start, end))
+    return kept
+
+
 def _first_match(pattern: re.Pattern[str], line: str) -> str | None:
     match = pattern.search(line)
     return match.group(0) if match else None
@@ -247,6 +323,9 @@ def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
         logger.debug("line %d: %r", line_number, line)
 
         drug_matches = _find_drugs(line, index)
+        if index.requires_context:
+            drug_matches = _apply_context_gate(line, drug_matches)
+
         for i, (_entry, drug, drug_start, _drug_end) in enumerate(drug_matches):
             segment_start = drug_start
             segment_end = drug_matches[i + 1][2] if i + 1 < len(drug_matches) else len(line)

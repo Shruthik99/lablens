@@ -220,6 +220,72 @@ def test_handwritten_terms_rxnorm_lacks_still_match_in_rxnorm_modes():
     assert [med.drug for med in extract("Senna 2 tablets nightly", mode="ingredients")] == ["senna"]
 
 
+def test_ambiguous_name_with_no_clinical_context_is_not_a_medication():
+    text = "Labs: sodium 138, potassium 4.1, calcium 9.2, glucose 110."
+
+    assert extract(text, mode="ingredients_context") == []
+    assert len(extract(text, mode="ingredients")) == 4
+
+
+def test_ambiguous_name_in_diet_advice_is_not_a_medication():
+    text = "Diet: increase water and iron rich foods."
+
+    assert extract(text, mode="ingredients_context") == []
+
+
+def test_ambiguous_name_in_a_vital_sign_is_not_a_medication():
+    text = "Oxygen saturation was 97 percent on room air throughout the stay."
+
+    assert extract(text, mode="ingredients_context") == []
+
+
+def test_ambiguous_name_is_kept_when_a_dose_follows_it():
+    meds = extract("Potassium 20 mEq PO daily.", mode="ingredients_context")
+
+    assert [med.drug for med in meds] == ["potassium"]
+
+
+def test_ambiguous_name_is_kept_on_a_verb_alone_without_any_dose():
+    """Requiring a dose would lose real orders; the verb is enough."""
+    meds = extract("You were prescribed iron for anemia.", mode="ingredients_context")
+
+    assert [med.drug for med in meds] == ["iron"]
+    assert meds[0].strength is None
+
+
+def test_inflected_medication_verb_is_recognized():
+    """ "Started on" is far more common in discharge text than a bare "start"."""
+    meds = extract("Patient was started on oxygen at home.", mode="ingredients_context")
+
+    assert [med.drug for med in meds] == ["oxygen"]
+
+
+def test_a_neighbouring_drugs_dose_does_not_promote_an_ambiguous_word():
+    """The dose belongs to ferrous sulfate, so it must not validate "iron"."""
+    text = "Patient is iron deficient; started on ferrous sulfate 325 mg PO daily"
+
+    meds = extract(text, mode="ingredients_context")
+
+    assert [med.drug for med in meds] == ["ferrous sulfate"]
+
+
+def test_unambiguous_drug_names_are_never_gated():
+    meds = extract("Apixaban was discussed.", mode="ingredients_context")
+
+    assert [med.drug for med in meds] == ["apixaban"]
+
+
+def test_a_gated_out_name_does_not_steal_the_previous_drugs_attributes():
+    """The attribute window ends at the next match, so gating must happen first."""
+    text = "Insulin glargine 10 units subq nightly; recheck glucose later"
+
+    meds = extract(text, mode="ingredients_context")
+
+    assert [med.drug for med in meds] == ["insulin glargine"]
+    assert meds[0].strength == "10 units"
+    assert meds[0].frequency.lower() == "nightly"
+
+
 def test_debug_logging_captures_drug_match(caplog):
     text = "lisinopril 10 mg PO daily"
     with caplog.at_level(logging.DEBUG, logger="lablens.extract_rules"):
