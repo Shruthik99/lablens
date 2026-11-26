@@ -14,7 +14,9 @@ The rules extractor matches against RxNorm concepts fetched from the NLM RxNav A
 (`make build-lexicon`, committed as `src/lablens/resources/rxnorm_lexicon.tsv` with RxCUI,
 term type and RxNorm version). Names that are also ordinary English — `iron`, `oxygen`,
 `sodium` — are kept but flagged, and the `*_context` modes emit them only when a dose,
-route or medication verb is nearby. See
+route or medication verb is nearby. The default mode is `with_brands_context`
+(ingredients, precise ingredients and brand names, with the ambiguity gate on); select
+another with `--lexicon-mode` on `lablens.evaluate`. See
 [docs/decisions/0001-rxnorm-lexicon-ambiguity.md](docs/decisions/0001-rxnorm-lexicon-ambiguity.md)
 and compare configurations with `make eval-modes`.
 

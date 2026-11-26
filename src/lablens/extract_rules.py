@@ -93,7 +93,7 @@ LEXICON_MODES = (
     WITH_BRANDS_CONTEXT,
 )
 
-DEFAULT_LEXICON_MODE = INGREDIENTS
+DEFAULT_LEXICON_MODE = WITH_BRANDS_CONTEXT
 
 # Which RxNorm term types each mode admits, and whether ambiguous names need context.
 _MODE_TERM_TYPES = {
