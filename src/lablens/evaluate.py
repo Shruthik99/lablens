@@ -1,6 +1,6 @@
-"""Evaluate the rule-based medication extractor against a labeled fixture.
+"""Evaluate a medication extractor against a labeled fixture.
 
-Runnable as: python -m lablens.evaluate <path-to-fixture.json>
+Runnable as: python -m lablens.evaluate <path-to-fixture.json> [--extractor {rules,llm}]
 """
 
 from __future__ import annotations
@@ -11,9 +11,12 @@ import json
 import re
 import subprocess
 import sys
+import time
+from collections.abc import Callable
+from functools import partial
 from typing import Any
 
-from lablens import extract_rules
+from lablens import extract_llm, extract_rules
 from lablens.extract_rules import extract
 from lablens.schema import Medication
 
@@ -138,10 +141,22 @@ def summarize(case_results: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def evaluate_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
-    """Run extract() over each case and compute metrics against the expected medications."""
-    results = [score_case(case["text"], case["expected"], extract(case["text"])) for case in cases]
-    return summarize(results)
+def evaluate_cases(
+    cases: list[dict[str, Any]],
+    extract_fn: Callable[[str], list[Medication]] = extract,
+) -> dict[str, Any]:
+    """Run extract_fn over each case, computing metrics and average time per case."""
+    results = []
+    durations = []
+    for case in cases:
+        started = time.perf_counter()
+        predicted = extract_fn(case["text"])
+        durations.append(time.perf_counter() - started)
+        results.append(score_case(case["text"], case["expected"], predicted))
+
+    metrics = summarize(results)
+    metrics["avg_seconds_per_case"] = sum(durations) / len(durations) if durations else 0.0
+    return metrics
 
 
 def format_report(metrics: dict[str, Any]) -> str:
@@ -156,6 +171,15 @@ def format_report(metrics: dict[str, Any]) -> str:
         "Field accuracy (matched drugs only):",
     ]
     lines.extend(f"  {field}: {metrics['field_accuracy'][field]:.3f}" for field in FIELDS)
+
+    if "avg_seconds_per_case" in metrics:
+        lines.append(f"Avg seconds/case: {metrics['avg_seconds_per_case']:.3f}")
+
+    if "ungrounded_values" in metrics:
+        lines.append(f"Ungrounded values dropped: {metrics['ungrounded_values']}")
+
+    if "ungrounded_drugs" in metrics:
+        lines.append(f"Ungrounded drugs dropped: {metrics['ungrounded_drugs']}")
 
     if metrics["mismatches"]:
         lines.append("")
@@ -204,17 +228,27 @@ def build_run_data(
     fixture_path: str,
     metrics: dict[str, Any],
     *,
-    lexicon_size: int,
+    lexicon_size: int | None = None,
     fixture_sha256: str,
     git_commit: str | None,
+    extractor: str = "rules",
+    model: str | None = None,
+    prompt_version: str | None = None,
 ) -> dict[str, Any]:
     """Build the MLflow params/metrics payload for one evaluation run."""
     params: dict[str, Any] = {
-        "extractor": "rules",
-        "lexicon_size": lexicon_size,
+        "extractor": extractor,
         "fixture_path": fixture_path,
         "fixture_sha256": fixture_sha256,
     }
+    if lexicon_size is not None:
+        params["lexicon_size"] = lexicon_size
+    if model is not None:
+        params["model"] = model
+    if prompt_version is not None:
+        params["prompt_version"] = prompt_version
+    if extractor == "llm":
+        params["grounding"] = "on"
     if git_commit:
         params["git_commit"] = git_commit
 
@@ -226,20 +260,36 @@ def build_run_data(
     run_metrics.update(
         {f"field_accuracy_{field}": metrics["field_accuracy"][field] for field in FIELDS}
     )
+    if "avg_seconds_per_case" in metrics:
+        run_metrics["avg_seconds_per_case"] = metrics["avg_seconds_per_case"]
+    if "ungrounded_values" in metrics:
+        run_metrics["ungrounded_values"] = metrics["ungrounded_values"]
+    if "ungrounded_drugs" in metrics:
+        run_metrics["ungrounded_drugs"] = metrics["ungrounded_drugs"]
 
     return {"params": params, "metrics": run_metrics}
 
 
-def log_mlflow_run(fixture_path: str, metrics: dict[str, Any], report: str) -> None:
+def log_mlflow_run(
+    fixture_path: str,
+    metrics: dict[str, Any],
+    report: str,
+    *,
+    extractor: str = "rules",
+    model: str | None = None,
+) -> None:
     """Log one evaluation run to MLflow. Imports mlflow lazily since it's an optional extra."""
     import mlflow
 
     run_data = build_run_data(
         fixture_path,
         metrics,
-        lexicon_size=len(extract_rules._LEXICON),
+        lexicon_size=len(extract_rules._LEXICON) if extractor == "rules" else None,
         fixture_sha256=_sha256_file(fixture_path),
         git_commit=_git_commit(),
+        extractor=extractor,
+        model=model,
+        prompt_version=extract_llm.PROMPT_VERSION if extractor == "llm" else None,
     )
 
     mlflow.set_tracking_uri("sqlite:///mlflow.db")
@@ -251,8 +301,19 @@ def log_mlflow_run(fixture_path: str, metrics: dict[str, Any], report: str) -> N
 
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
-    parser = argparse.ArgumentParser(description="Evaluate the rule-based medication extractor.")
+    parser = argparse.ArgumentParser(description="Evaluate a medication extractor.")
     parser.add_argument("fixture", help="Path to a JSON file of {text, expected} cases.")
+    parser.add_argument(
+        "--extractor",
+        choices=["rules", "llm"],
+        default="rules",
+        help="Which extractor to evaluate (default: rules).",
+    )
+    parser.add_argument(
+        "--model",
+        default="qwen3:4b",
+        help="Ollama model to use when --extractor=llm (default: qwen3:4b).",
+    )
     parser.add_argument(
         "--track",
         action="store_true",
@@ -263,12 +324,28 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     with open(args.fixture, encoding="utf-8") as f:
         cases = json.load(f)
 
-    metrics = evaluate_cases(cases)
+    stats = extract_llm.GroundingStats() if args.extractor == "llm" else None
+    if args.extractor == "llm":
+        extract_fn = partial(extract_llm.extract, model=args.model, stats=stats)
+    else:
+        extract_fn = extract
+
+    metrics = evaluate_cases(cases, extract_fn)
+    if stats is not None:
+        metrics["ungrounded_values"] = stats.ungrounded_values
+        metrics["ungrounded_drugs"] = stats.ungrounded_drugs
+
     report = format_report(metrics)
     print(report)
 
     if args.track:
-        log_mlflow_run(args.fixture, metrics, report)
+        log_mlflow_run(
+            args.fixture,
+            metrics,
+            report,
+            extractor=args.extractor,
+            model=args.model if args.extractor == "llm" else None,
+        )
 
     return metrics
 
