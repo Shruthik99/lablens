@@ -5,7 +5,20 @@ It extracts each medication (drug, dose, route, frequency, status) with the exac
 explains medical terms, and answers questions only from the document and trusted sources.
 
 ## Status
-Early development. Done: project setup, data inspection. Next: annotation guide and baseline extractor.
+Early development. Done: project setup, data inspection, annotation guide, rule-based /
+local-LLM / fine-tuned-T5 extractors, evaluation with MLflow tracking, RxNorm lexicon.
+Next: gold labeling on the held-out notes.
+
+## Medication lexicon
+The rules extractor matches against RxNorm concepts fetched from the NLM RxNav API
+(`make build-lexicon`, committed as `src/lablens/resources/rxnorm_lexicon.tsv` with RxCUI,
+term type and RxNorm version). Names that are also ordinary English — `iron`, `oxygen`,
+`sodium` — are kept but flagged, and the `*_context` modes emit them only when a dose,
+route or medication verb is nearby. The default mode is `with_brands_context`
+(ingredients, precise ingredients and brand names, with the ambiguity gate on); select
+another with `--lexicon-mode` on `lablens.evaluate`. See
+[docs/decisions/0001-rxnorm-lexicon-ambiguity.md](docs/decisions/0001-rxnorm-lexicon-ambiguity.md)
+and compare configurations with `make eval-modes`.
 
 ## Scope
 - Research prototype, not medical advice, not for clinical use. No regulatory claims are made.

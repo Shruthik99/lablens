@@ -1,0 +1,5 @@
+# Generated and hashed data files must stay LF on every OS, or a rebuild on Windows
+# rewrites the whole file and the sha256 logged to MLflow stops matching.
+*.tsv text eol=lf
+*.jsonl text eol=lf
+src/lablens/resources/*.txt text eol=lf

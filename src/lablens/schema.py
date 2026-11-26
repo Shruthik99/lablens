@@ -29,6 +29,10 @@ class Medication(BaseModel):
     duration: str | None = None
     action: Action = Action.UNKNOWN
     setting: Setting = Setting.UNKNOWN
+    # RxNorm provenance, set by the rules extractor when the lexicon supplies it.
+    # Not scored: these trace a match back to a vocabulary release, they are not predictions.
+    rxcui: str | None = None
+    tty: str | None = None
     evidence: str
     start: int
     end: int

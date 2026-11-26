@@ -1,0 +1,17 @@
+[
+  {"text": "Patient tolerated the procedure well and was discharged home.", "expected": []},
+  {"text": "Follow up with your primary care doctor in one week.", "expected": []},
+  {"text": "Call the office if you develop fever, chills, or shortness of breath.", "expected": []},
+  {"text": "Allergies: allergic to penicillin, rash.", "expected": []},
+  {"text": "He was treated with antibiotics and chemotherapy before admission.", "expected": []},
+  {"text": "Labs: sodium 138, potassium 4.1, calcium 9.2, glucose 110.", "expected": []},
+  {"text": "Oxygen saturation was 97 percent on room air throughout the stay.", "expected": []},
+  {"text": "Diet: increase water and iron rich foods.", "expected": []},
+  {"text": "Creatinine remained stable at 1.0 during the admission.", "expected": []},
+  {"text": "Vancomycin level was 15 before the fourth dose.", "expected": []},
+  {"text": "Continue lisinopril for blood pressure.", "expected": [{"drug": "lisinopril", "strength": null, "dosage": null, "route": null, "frequency": null, "duration": null}]},
+  {"text": "Start metformin for your diabetes.", "expected": [{"drug": "metformin", "strength": null, "dosage": null, "route": null, "frequency": null, "duration": null}]},
+  {"text": "Hold warfarin before the dental procedure.", "expected": [{"drug": "warfarin", "strength": null, "dosage": null, "route": null, "frequency": null, "duration": null}]},
+  {"text": "You were prescribed iron for anemia.", "expected": [{"drug": "iron", "strength": null, "dosage": null, "route": null, "frequency": null, "duration": null}]},
+  {"text": "Continue oxygen by nasal cannula at home.", "expected": [{"drug": "oxygen", "strength": null, "dosage": null, "route": "by nasal cannula", "frequency": null, "duration": null}]}
+]
