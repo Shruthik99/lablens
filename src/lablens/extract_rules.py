@@ -1,6 +1,7 @@
 """Rule-based medication extractor: finds known drug names and line-local attributes."""
 
 import csv
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -219,6 +220,25 @@ def warm_lexicon_cache(mode: str = DEFAULT_LEXICON_MODE) -> None:
 def lexicon_size(mode: str = DEFAULT_LEXICON_MODE) -> int:
     """Number of distinct terms a mode matches on."""
     return len(_get_index(mode))
+
+
+def _lexicon_filename(mode: str) -> str:
+    return "drug_lexicon.txt" if _check_mode(mode) == HANDWRITTEN else "rxnorm_lexicon.tsv"
+
+
+def lexicon_sha256(mode: str = DEFAULT_LEXICON_MODE) -> str:
+    """Hash of the file a mode reads, so a run can be tied to an exact lexicon."""
+    data = _read_resource(_lexicon_filename(mode)).encode("utf-8")
+    return hashlib.sha256(data).hexdigest()
+
+
+def rxnorm_version(mode: str = DEFAULT_LEXICON_MODE) -> str | None:
+    """RxNorm release a mode's lexicon was built from, or None for the hand-written list."""
+    if _check_mode(mode) == HANDWRITTEN:
+        return None
+    rows = csv.DictReader(_read_resource("rxnorm_lexicon.tsv").splitlines(), delimiter="\t")
+    first = next(rows, None)
+    return first["rxnorm_version"] if first else None
 
 
 _LEXICON = _load_lexicon()
