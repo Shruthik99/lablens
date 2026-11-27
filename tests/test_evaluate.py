@@ -226,6 +226,23 @@ def test_format_report_smoke():
     assert "strength" in report
 
 
+def test_format_report_shows_duplicates_removed_when_present():
+    metrics = summarize([])
+    metrics["duplicates_removed"] = 10
+
+    report = format_report(metrics)
+
+    assert "Duplicates removed: 10" in report
+
+
+def test_format_report_omits_duplicates_removed_when_absent():
+    metrics = summarize([])
+
+    report = format_report(metrics)
+
+    assert "Duplicates removed" not in report
+
+
 def test_format_report_shows_na_for_field_accuracy_when_no_matches():
     metrics = summarize(
         [
@@ -421,6 +438,35 @@ def test_build_run_data_includes_model_dir_and_run_info_for_t5_extractor():
     assert run_data["params"]["model_val_sha256"] == "valhash"
     assert run_data["metrics"]["parse_failures"] == 1
     assert run_data["metrics"]["ungrounded_drugs"] == 2
+
+
+def test_build_run_data_includes_duplicates_removed_for_t5_extractor():
+    metrics = summarize([])
+    metrics["duplicates_removed"] = 10
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        fixture_sha256="deadbeef",
+        git_commit=None,
+        extractor="t5",
+        model_dir="models/flan-t5",
+    )
+
+    assert run_data["metrics"]["duplicates_removed"] == 10
+
+
+def test_build_run_data_omits_duplicates_removed_when_absent():
+    metrics = summarize([])
+
+    run_data = build_run_data(
+        "tests/fixtures/mini_eval.json",
+        metrics,
+        fixture_sha256="deadbeef",
+        git_commit=None,
+    )
+
+    assert "duplicates_removed" not in run_data["metrics"]
 
 
 def test_build_run_data_omits_model_run_info_fields_when_unavailable():
