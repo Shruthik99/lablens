@@ -3931,7 +3931,7 @@ calcifediol	1889	IN	0	rxnorm	02-Nov-2026
 calcifediol anhydrous	1855064	PIN	0	rxnorm	02-Nov-2026
 calcipotriene	29365	IN	0	rxnorm	02-Nov-2026
 calcipotriene hydrate	1299898	PIN	0	rxnorm	02-Nov-2026
-calcitonin	1311287	IN	0	rxnorm	02-Nov-2026
+calcitonin	1311287	IN	1	rxnorm	02-Nov-2026
 calcitrene	1013633	BN	0	rxnorm	02-Nov-2026
 calcitriol	1894	IN	0	rxnorm	02-Nov-2026
 calcium	1895	IN	1	rxnorm	02-Nov-2026
@@ -5587,7 +5587,7 @@ cobenfy	2694844	BN	0	rxnorm	02-Nov-2026
 cobicistat	1306284	IN	0	rxnorm	02-Nov-2026
 cobimetinib	1722365	IN	0	rxnorm	02-Nov-2026
 cobimetinib fumarate	1722380	PIN	0	rxnorm	02-Nov-2026
-cocaine	2653	IN	0	rxnorm	02-Nov-2026
+cocaine	2653	IN	1	rxnorm	02-Nov-2026
 cocaine esterase	2463110	IN	0	rxnorm	02-Nov-2026
 cocaine hydrochloride	81985	PIN	0	rxnorm	02-Nov-2026
 cocamide	1739005	IN	0	rxnorm	02-Nov-2026
@@ -10300,7 +10300,7 @@ hericium americanum whole extract	2359933	IN	0	rxnorm	02-Nov-2026
 hericium erinaceus fruiting body extract	2631132	IN	0	rxnorm	02-Nov-2026
 herklin	1988405	BN	0	rxnorm	02-Nov-2026
 hernexeos	2721610	BN	0	rxnorm	02-Nov-2026
-heroin	3304	IN	0	rxnorm	02-Nov-2026
+heroin	3304	IN	1	rxnorm	02-Nov-2026
 heroin hydrochloride	81994	PIN	0	rxnorm	02-Nov-2026
 herpesvirus 1, human	1316105	IN	0	rxnorm	02-Nov-2026
 herpesvirus 2, human	1318479	IN	0	rxnorm	02-Nov-2026
@@ -10503,7 +10503,7 @@ human adrenal gland preparation	2277352	IN	0	rxnorm	02-Nov-2026
 human albumin grifols	603571	BN	0	rxnorm	02-Nov-2026
 human breast tumor cell	1345682	IN	0	rxnorm	02-Nov-2026
 human calcitonin	235481	IN	0	rxnorm	02-Nov-2026
-human chorionic gonadotropin	340705	PIN	0	rxnorm	02-Nov-2026
+human chorionic gonadotropin	340705	PIN	1	rxnorm	02-Nov-2026
 human colostrum	1605775	IN	0	rxnorm	02-Nov-2026
 human cord blood hematopoietic progenitor cell	1307732	IN	0	rxnorm	02-Nov-2026
 human coxsackievirus a2	1435394	PIN	0	rxnorm	02-Nov-2026
@@ -13632,7 +13632,7 @@ methadone hydrochloride	218337	PIN	0	rxnorm	02-Nov-2026
 methadose	152751	BN	0	rxnorm	02-Nov-2026
 methadyl acetate	6814	IN	0	rxnorm	02-Nov-2026
 methagual	1088954	BN	0	rxnorm	02-Nov-2026
-methamphetamine	6816	IN	0	rxnorm	02-Nov-2026
+methamphetamine	6816	IN	1	rxnorm	02-Nov-2026
 methamphetamine hydrochloride	82044	PIN	0	rxnorm	02-Nov-2026
 methampicillin	29629	IN	0	rxnorm	02-Nov-2026
 methampicillin sodium	273443	PIN	0	rxnorm	02-Nov-2026
@@ -16351,7 +16351,7 @@ perfluorooctyl triethoxysilane	1312743	IN	0	rxnorm	02-Nov-2026
 perfluoroperhydrophenanthrene	1540875	IN	0	rxnorm	02-Nov-2026
 perfluoropolymethylisopropyl ether	1430131	IN	0	rxnorm	02-Nov-2026
 perflutren	283753	IN	0	rxnorm	02-Nov-2026
-perform	1043225	BN	0	rxnorm	02-Nov-2026
+perform	1043225	BN	1	rxnorm	02-Nov-2026
 perforomist	723732	BN	0	rxnorm	02-Nov-2026
 pergolide	8047	IN	0	rxnorm	02-Nov-2026
 pergolide mesylate	8048	PIN	0	rxnorm	02-Nov-2026
@@ -16900,7 +16900,7 @@ plasma-lyte 56 in 5 % dextrose	1189664	BN	0	rxnorm	02-Nov-2026
 plasmalyte a	33834	BN	0	rxnorm	02-Nov-2026
 plasmanate	358340	BN	0	rxnorm	02-Nov-2026
 plasmin	4388	IN	0	rxnorm	02-Nov-2026
-plasminogen	2557200	IN	0	rxnorm	02-Nov-2026
+plasminogen	2557200	IN	1	rxnorm	02-Nov-2026
 plasminogen, human-tvmh	2557201	PIN	0	rxnorm	02-Nov-2026
 plasmodium malariae	1432989	IN	0	rxnorm	02-Nov-2026
 platanus occidentalis bark extract	2590682	IN	0	rxnorm	02-Nov-2026
@@ -17731,7 +17731,7 @@ proflavine	8723	IN	0	rxnorm	02-Nov-2026
 proflavine hemisulfate	8724	PIN	0	rxnorm	02-Nov-2026
 profluralin	2665290	IN	0	rxnorm	02-Nov-2026
 progabide	34568	IN	0	rxnorm	02-Nov-2026
-progesterone	8727	IN	0	rxnorm	02-Nov-2026
+progesterone	8727	IN	1	rxnorm	02-Nov-2026
 progesterone, micronized	259409	PIN	0	rxnorm	02-Nov-2026
 proglumetacin	34769	IN	0	rxnorm	02-Nov-2026
 proglumide	8730	IN	0	rxnorm	02-Nov-2026
@@ -17821,7 +17821,7 @@ propranolol hydrochloride	82084	PIN	0	rxnorm	02-Nov-2026
 proprinal	1300262	BN	0	rxnorm	02-Nov-2026
 propyl acetate	1649519	IN	0	rxnorm	02-Nov-2026
 propyl gallate	1311134	IN	0	rxnorm	02-Nov-2026
-propylene	1314239	IN	0	rxnorm	02-Nov-2026
+propylene	1314239	IN	1	rxnorm	02-Nov-2026
 propylene carbonate	1363696	IN	0	rxnorm	02-Nov-2026
 propylene glycol	34693	IN	0	rxnorm	02-Nov-2026
 propylene glycol 1,2-distearate	1370193	IN	0	rxnorm	02-Nov-2026
@@ -21366,7 +21366,7 @@ threonic acid, dl-	1547557	PIN	0	rxnorm	02-Nov-2026
 threonic acid, l-	1549112	PIN	0	rxnorm	02-Nov-2026
 threonine	10524	IN	0	rxnorm	02-Nov-2026
 threonine, dl-	1987478	PIN	0	rxnorm	02-Nov-2026
-thrive	1011867	BN	0	rxnorm	02-Nov-2026
+thrive	1011867	BN	1	rxnorm	02-Nov-2026
 thrombate iii	220305	BN	0	rxnorm	02-Nov-2026
 thrombin	10528	IN	0	rxnorm	02-Nov-2026
 thrombin alfa	1367075	PIN	0	rxnorm	02-Nov-2026

@@ -33,6 +33,10 @@ class Medication(BaseModel):
     # Not scored: these trace a match back to a vocabulary release, they are not predictions.
     rxcui: str | None = None
     tty: str | None = None
+    # True if a dose, route, or medication verb appears near the match. Not scored: it's a
+    # provenance signal the rules extractor records for every match, used only by callers
+    # that want to be more conservative than extract() itself (e.g. weak-label training data).
+    has_context: bool = False
     evidence: str
     start: int
     end: int

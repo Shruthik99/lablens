@@ -37,6 +37,7 @@ def test_missing_optional_fields_stay_none():
     assert med.duration is None
     assert med.action == Action.UNKNOWN
     assert med.setting == Setting.UNKNOWN
+    assert med.has_context is False
 
 
 def test_end_not_greater_than_start_rejected():

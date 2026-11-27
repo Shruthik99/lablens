@@ -200,6 +200,9 @@ def format_report(metrics: dict[str, Any]) -> str:
     if "parse_failures" in metrics:
         lines.append(f"Parse failures: {metrics['parse_failures']}")
 
+    if "duplicates_removed" in metrics:
+        lines.append(f"Duplicates removed: {metrics['duplicates_removed']}")
+
     if metrics["mismatches"]:
         lines.append("")
         lines.append("Field mismatches:")
@@ -321,6 +324,8 @@ def build_run_data(
         run_metrics["ungrounded_drugs"] = metrics["ungrounded_drugs"]
     if "parse_failures" in metrics:
         run_metrics["parse_failures"] = metrics["parse_failures"]
+    if "duplicates_removed" in metrics:
+        run_metrics["duplicates_removed"] = metrics["duplicates_removed"]
 
     return {"params": params, "metrics": run_metrics}
 
@@ -421,6 +426,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         metrics["ungrounded_values"] = stats.ungrounded_values
         metrics["ungrounded_drugs"] = stats.ungrounded_drugs
         metrics["parse_failures"] = stats.parse_failures
+        metrics["duplicates_removed"] = stats.duplicates_removed
 
     report = format_report(metrics)
     print(report)

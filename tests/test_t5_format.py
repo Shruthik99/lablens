@@ -5,15 +5,58 @@ from lablens.t5_format import linearize_medications, parse_medications
 
 def test_linearize_single_medication_all_fields():
     text = linearize_medications(
-        [{"drug": "ibuprofen", "strength": "800 mg", "frequency": "TID", "duration": None}]
+        [
+            {
+                "drug": "ibuprofen",
+                "strength": "800 mg",
+                "dosage": "2 tablets",
+                "route": "oral",
+                "frequency": "TID",
+                "duration": None,
+            }
+        ]
     )
 
-    assert text == "drug: ibuprofen | strength: 800 mg | frequency: TID"
+    assert (
+        text
+        == "drug: ibuprofen | strength: 800 mg | dosage: 2 tablets | route: oral | frequency: TID"
+    )
+
+
+def test_linearize_orders_fields_drug_strength_dosage_route_frequency_duration():
+    """Field order in the output must be drug, strength, dosage, route, frequency,
+    duration regardless of the order keys appear in the input dict."""
+    text = linearize_medications(
+        [
+            {
+                "duration": "30 days",
+                "frequency": "daily",
+                "route": "oral",
+                "dosage": "1 tablet",
+                "strength": "10 mg",
+                "drug": "lisinopril",
+            }
+        ]
+    )
+
+    assert text == (
+        "drug: lisinopril | strength: 10 mg | dosage: 1 tablet | route: oral | "
+        "frequency: daily | duration: 30 days"
+    )
 
 
 def test_linearize_omits_null_fields():
     text = linearize_medications(
-        [{"drug": "aspirin", "strength": None, "frequency": None, "duration": None}]
+        [
+            {
+                "drug": "aspirin",
+                "strength": None,
+                "dosage": None,
+                "route": None,
+                "frequency": None,
+                "duration": None,
+            }
+        ]
     )
 
     assert text == "drug: aspirin"
@@ -22,8 +65,22 @@ def test_linearize_omits_null_fields():
 def test_linearize_multiple_medications_joined_with_semicolon():
     text = linearize_medications(
         [
-            {"drug": "ibuprofen", "strength": "800 mg", "frequency": "TID", "duration": None},
-            {"drug": "aspirin", "strength": "81 mg", "frequency": None, "duration": None},
+            {
+                "drug": "ibuprofen",
+                "strength": "800 mg",
+                "dosage": None,
+                "route": None,
+                "frequency": "TID",
+                "duration": None,
+            },
+            {
+                "drug": "aspirin",
+                "strength": "81 mg",
+                "dosage": None,
+                "route": None,
+                "frequency": None,
+                "duration": None,
+            },
         ]
     )
 
@@ -39,12 +96,27 @@ def test_linearize_empty_list_returns_none_literal():
 
 def test_parse_normal_case():
     medications = parse_medications(
-        "drug: ibuprofen | strength: 800 mg | frequency: TID ; drug: aspirin | strength: 81 mg"
+        "drug: ibuprofen | strength: 800 mg | dosage: 2 tablets | route: oral | "
+        "frequency: TID ; drug: aspirin | strength: 81 mg"
     )
 
     assert medications == [
-        {"drug": "ibuprofen", "strength": "800 mg", "frequency": "TID", "duration": None},
-        {"drug": "aspirin", "strength": "81 mg", "frequency": None, "duration": None},
+        {
+            "drug": "ibuprofen",
+            "strength": "800 mg",
+            "dosage": "2 tablets",
+            "route": "oral",
+            "frequency": "TID",
+            "duration": None,
+        },
+        {
+            "drug": "aspirin",
+            "strength": "81 mg",
+            "dosage": None,
+            "route": None,
+            "frequency": None,
+            "duration": None,
+        },
     ]
 
 
@@ -52,7 +124,14 @@ def test_parse_omitted_fields_default_to_none():
     medications = parse_medications("drug: aspirin")
 
     assert medications == [
-        {"drug": "aspirin", "strength": None, "frequency": None, "duration": None}
+        {
+            "drug": "aspirin",
+            "strength": None,
+            "dosage": None,
+            "route": None,
+            "frequency": None,
+            "duration": None,
+        }
     ]
 
 
@@ -69,8 +148,22 @@ def test_parse_malformed_input_returns_none():
 
 def test_round_trips_through_the_prepare_and_extract_functions():
     medications = [
-        {"drug": "ibuprofen", "strength": "800 mg", "frequency": "TID", "duration": None},
-        {"drug": "amoxicillin", "strength": "500 mg", "frequency": "TID", "duration": "x 7 days"},
+        {
+            "drug": "ibuprofen",
+            "strength": "800 mg",
+            "dosage": "2 tablets",
+            "route": "oral",
+            "frequency": "TID",
+            "duration": None,
+        },
+        {
+            "drug": "amoxicillin",
+            "strength": "500 mg",
+            "dosage": None,
+            "route": None,
+            "frequency": "TID",
+            "duration": "x 7 days",
+        },
     ]
 
     assert parse_medications(linearize_medications(medications)) == medications
@@ -89,12 +182,35 @@ def test_every_target_in_a_small_sample_round_trips_through_the_tokenizer_unchan
 
     samples = [
         linearize_medications(
-            [{"drug": "ibuprofen", "strength": "800 mg", "frequency": "TID", "duration": None}]
+            [
+                {
+                    "drug": "ibuprofen",
+                    "strength": "800 mg",
+                    "dosage": "2 tablets",
+                    "route": "oral",
+                    "frequency": "TID",
+                    "duration": None,
+                }
+            ]
         ),
         linearize_medications(
             [
-                {"drug": "ibuprofen", "strength": "800 mg", "frequency": "TID", "duration": None},
-                {"drug": "aspirin", "strength": "81 mg", "frequency": None, "duration": None},
+                {
+                    "drug": "ibuprofen",
+                    "strength": "800 mg",
+                    "dosage": None,
+                    "route": None,
+                    "frequency": "TID",
+                    "duration": None,
+                },
+                {
+                    "drug": "aspirin",
+                    "strength": "81 mg",
+                    "dosage": None,
+                    "route": None,
+                    "frequency": None,
+                    "duration": None,
+                },
             ]
         ),
         linearize_medications(
@@ -102,6 +218,8 @@ def test_every_target_in_a_small_sample_round_trips_through_the_tokenizer_unchan
                 {
                     "drug": "insulin glargine",
                     "strength": None,
+                    "dosage": None,
+                    "route": "subcutaneous",
                     "frequency": "nightly",
                     "duration": None,
                 }
@@ -112,6 +230,8 @@ def test_every_target_in_a_small_sample_round_trips_through_the_tokenizer_unchan
                 {
                     "drug": "amoxicillin",
                     "strength": "500 mg",
+                    "dosage": "1 capsule",
+                    "route": None,
                     "frequency": "TID",
                     "duration": "x 7 days",
                 }

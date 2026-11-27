@@ -1,0 +1,28 @@
+# Diagnostic/imaging agents: RxNorm IN terms that are administered to image or test a
+# patient, never to treat one -- a contrast dye mentioned in an MRI/CT/angiogram note is
+# not a medication. Like organism_exclusions.txt, no surrounding clinical context can
+# rescue these; they're dropped outright, in every lexicon mode, before the index is built.
+#
+# Every name below was verified to exist in RxNorm IN (version 02-Nov-2026).
+# One name per line, lowercase. Blank lines and lines starting with # are ignored.
+
+# MRI contrast
+gadolinium
+
+# Ophthalmic/vascular dye
+fluorescein
+
+# Iodinated (CT/angiography) contrast
+diatrizoate
+iodixanol
+iohexol
+iopamidol
+iopromide
+iothalamate
+ioversol
+ioxaglate
+
+# Surgical/lymphatic imaging dyes (sentinel node mapping, perfusion assessment)
+indocyanine green
+methylene blue
+isosulfan blue

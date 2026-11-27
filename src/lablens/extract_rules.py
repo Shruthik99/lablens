@@ -12,8 +12,23 @@ from lablens.schema import Medication
 
 logger = logging.getLogger(__name__)
 
+# A plain number, or a comma-grouped one ("25,000", "1,000"); either may carry a decimal.
+_NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
+
+# A dose range ("40-60 mg"), or just a single number -- the whole range is the strength,
+# not only its second half (what a bare _NUMBER would match, the hyphen breaking it).
+_NUMBER_RANGE = rf"(?:{_NUMBER})(?:\s*-\s*(?:{_NUMBER}))?"
+
+# A per-weight or per-area base ("kg", "m2"), optionally further divided by a time period
+# ("/kg/day", "/kg/min", "/m2/day"); or a bare rate period alone ("/h", "/min"). Bare
+# "/day" is deliberately excluded here -- unlike a rate, it's a dosing frequency ("once a
+# day"), not part of the dose, and FREQUENCY_RE's "(?<!kg)/\s*d(?:ay)?" captures it there.
+# Covers "5 mg/kg", "1 mg/kg/day", "5 mcg/kg/min", "25 mg/m2", "0.5 mg/h", "300 mcg/min".
+_RATE_UNIT = r"(?:kg|m2)(?:\s*/\s*(?:day|min|h(?:r)?))?|min|h(?:r)?"
+
 _STRENGTH_RE = re.compile(
-    r"\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|units?)(?:\s*/\s*\d+(?:\.\d+)?\s*(?:ml|mg))?\b",
+    rf"\b(?:{_NUMBER_RANGE})\s*(?:mg|mcg|g|units?)"
+    rf"(?:\s*/\s*(?:(?:{_NUMBER})\s*(?:ml|mg)|{_RATE_UNIT}))?\b",
     re.IGNORECASE,
 )
 
@@ -23,13 +38,23 @@ _ROUTE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# "daily"/"a day"/"per day" are interchangeable after a count ("once", "twice", "N
+# times"); keeping them as one shared suffix covers all three without hand-enumerating
+# each combination.
+_DAILY_SUFFIX = r"(?:daily|a day|per day)"
+
 _BASE_FREQUENCY = (
-    r"once daily|twice daily|weekly|nightly|at bedtime|qhs|every morning|"
-    r"every evening|every \d+ hours?|q\d+h|bid|tid|qid|daily"
+    rf"once {_DAILY_SUFFIX}|twice {_DAILY_SUFFIX}|thrice {_DAILY_SUFFIX}|"
+    rf"(?:\d+|two|three|four|five|six) times {_DAILY_SUFFIX}|"
+    r"weekly|nightly|at bedtime|qhs|every morning|"
+    r"every evening|every \d+ h(?:ours?)?|q\d+h|bid|tid|qid|daily"
 )
 
 _FREQUENCY_RE = re.compile(
-    rf"\b(?:(?:{_BASE_FREQUENCY})\s+(?:prn|as needed)|{_BASE_FREQUENCY}|as needed|prn)\b",
+    rf"\b(?:(?:{_BASE_FREQUENCY})\s+(?:prn|as needed)|{_BASE_FREQUENCY}|as needed|prn|"
+    # A bare per-day suffix on a strength ("75 mg/day", "80 mg/d") is a frequency, not
+    # part of the dose; excluded when it follows "kg" so "5 mg/kg/day" stays one strength.
+    rf"(?<!kg)/\s*d(?:ay)?)\b",
     re.IGNORECASE,
 )
 
@@ -39,16 +64,47 @@ _DURATION_RE = re.compile(
 )
 
 _DOSAGE_RE = re.compile(
-    r"\b\d+(?:\.\d+)?\s*(?:puffs?|tablets?|capsules?|ml|drops?)\b",
+    rf"\b(?:{_NUMBER})\s*(?:puffs?|tablets?|capsules?|ml|drops?)\b",
     re.IGNORECASE,
 )
+
+# Sentence boundary for the attribute window only: punctuation followed by whitespace.
+# A decimal point ("0.5 mg") is never followed by whitespace, so it is never a false split.
+_SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?])\s+")
+
+# A lab concentration unit, as opposed to a dose: "mg/dL", "mmol/L", "g/dL", "ng/mL",
+# "mIU/mL". Distinct from _STRENGTH_RE's units, which are per-dose, not per-volume.
+_LAB_UNIT_RE = r"(?:mg|mmol|g|ng|miu)\s*/\s*(?:dl|ml|l)"
+
+# Drug mentions in a lab/test context, never a medication regardless of ambiguity flag:
+# a result ("sodium level", "glucose value", "lactate of above 15 mmol/L", "blood glucose,
+# 6.85 mmol/L"), a vital-sign reading ("oxygen saturation"), a receptor name ("insulin
+# receptor"), a resistance profile ("penicillin-resistant"), a number in a lab unit
+# directly after the name ("glucose 340 mg/dL"), or a lab panel prefix ("serum digoxin",
+# "levels of immunoglobulin G"). The leading "[\s(,-]*" skips a comma before the number
+# ("glucose, 6.85 mmol/L"), not just whitespace/parens/hyphen.
+_LAB_SUFFIX_RE = re.compile(
+    rf"\A[\s(,-]*(?:level|receptors?|resistant|values?|saturation|"
+    rf"of\s+(?:(?:above|below|around|approximately|over|under)\s+)?(?:{_NUMBER})|"
+    rf"(?:{_NUMBER})\s*{_LAB_UNIT_RE})\b",
+    re.IGNORECASE,
+)
+_LAB_PREFIX_RE = re.compile(r"\b(?:serum|levels?\s+of|values?\s+of)\s*\Z", re.IGNORECASE)
+_LAB_CONTEXT_CHARS = 30
+
+# "blood urea nitrogen" (BUN): a lab test name, never a medication, that happens to
+# tokenize across two ambiguous lexicon entries ("urea", "nitrogen"). Checked as its own
+# phrase (both sides must match) rather than folded into the suffix/prefix alternatives
+# above, since neither "blood" nor "nitrogen" alone implies a lab context.
+_BUN_PREFIX_RE = re.compile(r"\bblood\s*\Z", re.IGNORECASE)
+_BUN_SUFFIX_RE = re.compile(r"\A\s*nitrogen\b", re.IGNORECASE)
 
 # Dose units for the ambiguity gate only, kept separate from _STRENGTH_RE so widening it
 # cannot change extracted field values. The ambiguous names are mostly electrolytes, which
 # are dosed in mEq and mmol; without these, "Potassium 20 mEq PO daily" would be discarded.
 # Deliberately no "%": "oxygen saturation 97%" would otherwise read as a dose.
 _GATE_DOSE_RE = re.compile(
-    r"\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|units?|meq|mmol|iu|puffs?|tablets?|capsules?|ml|drops?)\b",
+    rf"\b(?:{_NUMBER})\s*(?:mg|mcg|g|units?|meq|mmol|iu|puffs?|tablets?|capsules?|ml|drops?)\b",
     re.IGNORECASE,
 )
 
@@ -74,9 +130,38 @@ _GATE_TOKENS_BEFORE = 3
 # makes hyphenated lexicon names like "alpha-tocopherol" match however the text spells them.
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 
+# Phrases that mean a different (or split-across-tokens) drug name than their own tokens
+# would suggest: a name split across two tokens that exists in the lexicon only as one
+# fused token ("methyl prednisolone", "methyl-prednisolone" -- hyphens are already
+# separators, so both spellings tokenize identically), and aliases for a specific drug
+# that are themselves never lexicon entries ("tissue plasminogen activator", "tPA" both
+# mean alteplase; see also "plasminogen" in ambiguity_list.txt). Merging/renaming in the
+# token stream (rather than rewriting the line) lets them match without shifting the
+# character offsets evidence/segments rely on.
+_COMPOUND_TOKEN_MERGES: dict[tuple[str, ...], str] = {
+    ("methyl", "prednisolone"): "methylprednisolone",
+    ("tissue", "plasminogen", "activator"): "alteplase",
+    ("tpa",): "alteplase",
+}
+_MAX_MERGE_LENGTH = max(len(key) for key in _COMPOUND_TOKEN_MERGES)
+
 
 def _tokenize(text: str) -> list[tuple[str, int, int]]:
-    return [(m.group(0).lower(), m.start(), m.end()) for m in _TOKEN_RE.finditer(text)]
+    tokens = [(m.group(0).lower(), m.start(), m.end()) for m in _TOKEN_RE.finditer(text)]
+    merged = []
+    i = 0
+    while i < len(tokens):
+        for length in range(min(_MAX_MERGE_LENGTH, len(tokens) - i), 0, -1):
+            window = tuple(token for token, _, _ in tokens[i : i + length])
+            fused_name = _COMPOUND_TOKEN_MERGES.get(window)
+            if fused_name is not None:
+                merged.append((fused_name, tokens[i][1], tokens[i + length - 1][2]))
+                i += length
+                break
+        else:
+            merged.append(tokens[i])
+            i += 1
+    return merged
 
 
 HANDWRITTEN = "handwritten"
@@ -124,6 +209,29 @@ def _load_lexicon() -> list[str]:
     return [line.strip() for line in data.splitlines() if line.strip()]
 
 
+def _load_name_list_resource(filename: str) -> set[str]:
+    data = _read_resource(filename)
+    return {
+        line.strip().lower()
+        for line in data.splitlines()
+        if line.strip() and not line.startswith("#")
+    }
+
+
+def _load_organism_exclusions() -> set[str]:
+    """Committed list of organism species names (culture/sensitivity results, allergens)
+    that happen to be RxNorm IN/PIN/BN terms but are never themselves a medication. Unlike
+    the ambiguity list, no clinical context can rescue these -- they're dropped outright."""
+    return _load_name_list_resource("organism_exclusions.txt")
+
+
+def _load_diagnostic_agent_exclusions() -> set[str]:
+    """Committed list of imaging/diagnostic agents (contrast media, dyes) that are RxNorm
+    terms but are administered to image or test, never to treat. Like organism names, no
+    clinical context can rescue these -- they're dropped outright."""
+    return _load_name_list_resource("diagnostic_agent_exclusions.txt")
+
+
 def _load_entries(mode: str) -> list[LexiconEntry]:
     """Load the lexicon entries a mode admits.
 
@@ -134,10 +242,13 @@ def _load_entries(mode: str) -> list[LexiconEntry]:
         return [LexiconEntry(name, None, None, False) for name in _load_lexicon()]
 
     allowed = _MODE_TERM_TYPES[mode]
+    excluded = _load_organism_exclusions() | _load_diagnostic_agent_exclusions()
     entries = []
     rows = csv.DictReader(_read_resource("rxnorm_lexicon.tsv").splitlines(), delimiter="\t")
     for row in rows:
         if row["tty"] not in allowed:
+            continue
+        if row["name"] in excluded:
             continue
         entries.append(
             LexiconEntry(
@@ -222,6 +333,17 @@ def lexicon_size(mode: str = DEFAULT_LEXICON_MODE) -> int:
     return len(_get_index(mode))
 
 
+def lookup(name: str, mode: str = DEFAULT_LEXICON_MODE) -> LexiconEntry | None:
+    """Look up a single name in a mode's lexicon index by its tokenized form.
+
+    For callers that have a drug name from elsewhere (e.g. a weak-label source) and need
+    its RxNorm provenance/ambiguity flag, without running full extraction over a note.
+    """
+    index = _get_index(_check_mode(mode))
+    key = tuple(token for token, _, _ in _tokenize(name))
+    return index.entries.get(key)
+
+
 def _lexicon_filename(mode: str) -> str:
     return "drug_lexicon.txt" if _check_mode(mode) == HANDWRITTEN else "rxnorm_lexicon.tsv"
 
@@ -302,16 +424,16 @@ def _has_clinical_context(line: str, tokens: list[tuple[str, int, int]], i: int,
 
 
 def _apply_context_gate(
-    line: str, matches: list[tuple[LexiconEntry, str, int, int]]
+    line: str,
+    tokens: list[tuple[str, int, int]],
+    starts: dict[int, int],
+    matches: list[tuple[LexiconEntry, str, int, int]],
 ) -> list[tuple[LexiconEntry, str, int, int]]:
     """Drop ambiguous names that no nearby clinical context supports.
 
     Runs before attribute windows are computed: a window ends at the next match's start,
     so a name dropped afterwards would still have truncated the previous drug's window.
     """
-    tokens = _tokenize(line)
-    starts = {token[1]: index for index, token in enumerate(tokens)}
-
     kept = []
     for entry, drug, start, end in matches:
         if entry.ambiguous:
@@ -324,9 +446,136 @@ def _apply_context_gate(
     return kept
 
 
+def _apply_lab_context_filter(
+    line: str, matches: list[tuple[LexiconEntry, str, int, int]]
+) -> list[tuple[LexiconEntry, str, int, int]]:
+    """Drop matches used as a lab result, receptor name, or resistance profile rather than
+    a medication, regardless of lexicon mode or the ambiguity flag: "insulin receptor" and
+    "penicillin-resistant" are unambiguous RxNorm ingredients that the ambiguity gate never
+    looks at, yet are never themselves a prescribed medication here."""
+    kept = []
+    for entry, drug, start, end in matches:
+        after = line[end : end + _LAB_CONTEXT_CHARS]
+        before = line[max(0, start - _LAB_CONTEXT_CHARS) : start]
+        if (
+            _LAB_SUFFIX_RE.search(after)
+            or _LAB_PREFIX_RE.search(before)
+            or (_BUN_PREFIX_RE.search(before) and _BUN_SUFFIX_RE.search(after))
+        ):
+            logger.debug("name %r dropped: lab/test context", drug)
+            continue
+        kept.append((entry, drug, start, end))
+    return kept
+
+
+def _sentence_end(line: str, pos: int) -> int:
+    """End offset of the sentence containing pos: the next "[.!?]" + whitespace break at
+    or after pos, or the end of the line. A decimal point is never followed by whitespace,
+    so this never splits a dose like "0.5 mg" in half."""
+    match = _SENTENCE_BREAK_RE.search(line, pos)
+    return match.start() if match else len(line)
+
+
+def _sentence_start(line: str, pos: int) -> int:
+    """Start offset of the sentence containing pos: the end of the last "[.!?]" +
+    whitespace break before pos, or the start of the line."""
+    start = 0
+    for match in _SENTENCE_BREAK_RE.finditer(line, 0, pos):
+        start = match.end()
+    return start
+
+
+# Dose attribution is conservative: a strength/dosage/route is assigned to a drug only
+# when it's directly adjacent, nothing else (no other drug, "and", or comma-separated
+# item) sitting in between. Two directions, each anchored so only the sanctioned
+# connectors below can appear between the drug and the attribute:
+#
+# PRECEDING ("100 mg propofol", "topical atropine", "4 g of acetaminophen", "1 g of IV
+# acetaminophen"): the attribute must reach the very end of the text it's searched
+# against (the gap right before the drug). Strength/dosage allow an "of" and then a route
+# word ("of IV"); route does not ("topical of atropine" is not idiomatic). The "value"
+# group isolates the attribute from that optional trailing connector.
+#
+# FORWARD ("lisinopril 10 mg", "drug (500 mg)", "drug at 100 mg", "Inhaler 2 puffs"): the
+# attribute must start at the very beginning of the text it's searched against (the text
+# right after the drug), modulo an opening "(", "at", or -- for strength/dosage only --
+# the drug's own route word (so a route stated before the dose doesn't block it; route
+# itself allows a strength/dosage first, for the same reason in the other order).
+_PRECEDING_STRENGTH_RE = re.compile(
+    rf"(?P<value>{_STRENGTH_RE.pattern})\s*(?:of\s*)?(?:{_ROUTE_RE.pattern}\s*)?\Z",
+    re.IGNORECASE,
+)
+_PRECEDING_DOSAGE_RE = re.compile(
+    rf"(?P<value>{_DOSAGE_RE.pattern})\s*(?:of\s*)?(?:{_ROUTE_RE.pattern}\s*)?\Z",
+    re.IGNORECASE,
+)
+_PRECEDING_ROUTE_RE = re.compile(rf"(?P<value>{_ROUTE_RE.pattern})\s*\Z", re.IGNORECASE)
+
+_FORWARD_STRENGTH_RE = re.compile(
+    rf"\A[\s(]*(?:at\s+)?(?:{_ROUTE_RE.pattern}\s+)?(?P<value>{_STRENGTH_RE.pattern})",
+    re.IGNORECASE,
+)
+_FORWARD_DOSAGE_RE = re.compile(
+    rf"\A[\s(]*(?:at\s+)?(?:{_ROUTE_RE.pattern}\s+)?(?P<value>{_DOSAGE_RE.pattern})",
+    re.IGNORECASE,
+)
+_FORWARD_ROUTE_RE = re.compile(
+    rf"\A\s*(?:{_STRENGTH_RE.pattern}|{_DOSAGE_RE.pattern})?\s*(?P<value>{_ROUTE_RE.pattern})",
+    re.IGNORECASE,
+)
+
+
+def _forward_match(pattern: re.Pattern[str], text_after_drug: str) -> str | None:
+    match = pattern.search(text_after_drug)
+    return match.group("value") if match else None
+
+
 def _first_match(pattern: re.Pattern[str], line: str) -> str | None:
+    """Frequency/duration are not subject to the strength/dosage/route adjacency rule
+    above: they're searched anywhere in the attribute window, as before."""
     match = pattern.search(line)
     return match.group(0) if match else None
+
+
+def _preceding_attributes(
+    line: str, drug_matches: list[tuple[LexiconEntry, str, int, int]]
+) -> tuple[dict[int, str], dict[int, str], dict[int, str], dict[int, int]]:
+    """Find, for each drug match, a strength/dosage/route that directly precedes it in
+    the same sentence (e.g. "100 mg propofol, and 50 mg rocuronium", "topical atropine,
+    and oral prednisolone"): an attribute immediately followed by a drug name belongs to
+    that drug, never to one mentioned earlier. Returns (strengths, dosages, routes,
+    claim_starts) by match index; claim_starts lets the PRECEDING drug's own forward
+    window stop before an attribute it doesn't own.
+    """
+    strengths: dict[int, str] = {}
+    dosages: dict[int, str] = {}
+    routes: dict[int, str] = {}
+    claim_starts: dict[int, int] = {}
+
+    for i, (_entry, _drug, drug_start, _drug_end) in enumerate(drug_matches):
+        gap_start = max(
+            drug_matches[i - 1][3] if i > 0 else 0,
+            _sentence_start(line, drug_start),
+        )
+        gap_text = line[gap_start:drug_start]
+        claim_start = None
+
+        for pattern, field in (
+            (_PRECEDING_STRENGTH_RE, strengths),
+            (_PRECEDING_DOSAGE_RE, dosages),
+            (_PRECEDING_ROUTE_RE, routes),
+        ):
+            match = pattern.search(gap_text)
+            if match is None:
+                continue
+            field[i] = match.group("value")
+            match_start = gap_start + match.start()
+            claim_start = match_start if claim_start is None else min(claim_start, match_start)
+
+        if claim_start is not None:
+            claim_starts[i] = claim_start
+
+    return strengths, dosages, routes, claim_starts
 
 
 def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
@@ -343,24 +592,44 @@ def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
         logger.debug("line %d: %r", line_number, line)
 
         drug_matches = _find_drugs(line, index)
-        if index.requires_context:
-            drug_matches = _apply_context_gate(line, drug_matches)
+        drug_matches = _apply_lab_context_filter(line, drug_matches)
 
-        for i, (entry, drug, drug_start, _drug_end) in enumerate(drug_matches):
+        tokens = _tokenize(line)
+        starts = {token[1]: idx for idx, token in enumerate(tokens)}
+        if index.requires_context:
+            drug_matches = _apply_context_gate(line, tokens, starts, drug_matches)
+
+        preceding_strengths, preceding_dosages, preceding_routes, claim_starts = (
+            _preceding_attributes(line, drug_matches)
+        )
+
+        for i, (entry, drug, drug_start, drug_end) in enumerate(drug_matches):
             segment_start = drug_start
             segment_end = drug_matches[i + 1][2] if i + 1 < len(drug_matches) else len(line)
+            segment_end = min(segment_end, _sentence_end(line, drug_start))
+            if i + 1 in claim_starts:
+                # The next drug's attribute precedes it in this gap; don't claim it here.
+                segment_end = min(segment_end, claim_starts[i + 1])
             segment = line[segment_start:segment_end]
+
+            has_context = _has_clinical_context(
+                line, tokens, starts[drug_start], len(drug.split(" "))
+            )
 
             logger.debug("drug match: %r at [%d, %d)", drug, segment_start, segment_end)
             logger.debug("attribute window: %r", segment)
 
-            strength = _first_match(_STRENGTH_RE, segment)
+            text_after_drug = line[drug_end:segment_end]
+
+            strength = preceding_strengths.get(i) or _forward_match(
+                _FORWARD_STRENGTH_RE, text_after_drug
+            )
             logger.debug("strength: %s", strength or "not found")
 
-            dosage = _first_match(_DOSAGE_RE, segment)
+            dosage = preceding_dosages.get(i) or _forward_match(_FORWARD_DOSAGE_RE, text_after_drug)
             logger.debug("dosage: %s", dosage or "not found")
 
-            route = _first_match(_ROUTE_RE, segment)
+            route = preceding_routes.get(i) or _forward_match(_FORWARD_ROUTE_RE, text_after_drug)
             logger.debug("route: %s", route or "not found")
 
             frequency = _first_match(_FREQUENCY_RE, segment)
@@ -379,6 +648,7 @@ def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
                     duration=duration,
                     rxcui=entry.rxcui,
                     tty=entry.tty,
+                    has_context=has_context,
                     evidence=line,
                     start=line_start,
                     end=line_end,

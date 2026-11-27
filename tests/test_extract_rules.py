@@ -3,7 +3,7 @@ import logging
 import pytest
 
 from lablens import extract_rules
-from lablens.extract_rules import extract
+from lablens.extract_rules import extract, lookup
 
 
 def test_single_drug_all_fields():
@@ -307,3 +307,479 @@ def test_debug_logging_captures_drug_match(caplog):
         extract(text)
 
     assert any("lisinopril" in record.getMessage() for record in caplog.records)
+
+
+def test_lookup_returns_entry_for_a_known_ingredient():
+    entry = lookup("lisinopril", mode="ingredients")
+
+    assert entry is not None
+    assert entry.rxcui == "29046"
+    assert entry.tty == "IN"
+    assert entry.ambiguous is False
+
+
+def test_lookup_returns_none_for_an_unknown_name():
+    assert lookup("not-a-real-drug-xyz") is None
+
+
+def test_lookup_flags_an_ambiguous_entry():
+    entry = lookup("iron", mode="ingredients")
+
+    assert entry is not None
+    assert entry.ambiguous is True
+
+
+def test_attribute_window_does_not_cross_into_the_next_sentence():
+    """A number in a later sentence on the same line must not be read as this drug's
+    strength; only the next drug match or the end of this sentence bounds the window."""
+    text = (
+        "Started on amlodipine for blood pressure control. "
+        "Pain was rated 5 mg on the visual scale today."
+    )
+
+    meds = extract(text)
+
+    assert [med.drug for med in meds] == ["amlodipine"]
+    assert meds[0].strength is None
+
+
+def test_sentence_boundary_detection_does_not_split_a_decimal_dose():
+    text = "amlodipine 0.5 mg PO daily for hypertension. Patient tolerated well."
+
+    meds = extract(text)
+
+    assert len(meds) == 1
+    assert meds[0].strength == "0.5 mg"
+
+
+def test_strength_keeps_a_per_weight_unit():
+    meds = extract("vancomycin 15 mg/kg IV q12h")
+
+    assert meds[0].strength == "15 mg/kg"
+
+
+def test_strength_keeps_a_per_weight_per_day_unit():
+    meds = extract("gentamicin 1 mg/kg/day IV daily")
+
+    assert meds[0].strength == "1 mg/kg/day"
+
+
+def test_strength_keeps_a_concentration_form_not_shortened():
+    meds = extract("amoxicillin 125 mg/5 ml PO BID")
+
+    assert meds[0].strength == "125 mg/5 ml"
+
+
+def test_drug_name_followed_by_receptor_is_not_a_medication():
+    text = "The biopsy showed reduced insulin receptor expression in the tissue sample."
+
+    assert extract(text) == []
+
+
+def test_drug_name_directly_marked_resistant_is_not_a_medication():
+    text = "The infection was vancomycin-resistant and required a different antibiotic."
+
+    assert extract(text) == []
+
+
+def test_drug_name_preceded_by_serum_and_followed_by_level_is_not_a_medication():
+    text = "Serum digoxin level was therapeutic, no dose change needed."
+
+    assert extract(text) == []
+
+
+def test_drug_name_preceded_by_serum_alone_is_not_a_medication():
+    text = "Serum lithium was checked given mood symptoms."
+
+    assert extract(text) == []
+
+
+def test_lab_context_filter_does_not_drop_a_real_order():
+    text = "insulin 10 units subcutaneous before meals"
+
+    assert [med.drug for med in extract(text)] == ["insulin"]
+
+
+def test_perform_without_context_is_not_a_medication():
+    text = "Patient is expected to perform well after surgery."
+
+    assert extract(text) == []
+
+
+def test_thrive_without_context_is_not_a_medication():
+    text = "The baby is able to thrive despite the diagnosis."
+
+    assert extract(text) == []
+
+
+def test_propylene_without_context_is_not_a_medication():
+    text = "Sample tested positive for propylene in the industrial exposure panel."
+
+    assert extract(text) == []
+
+
+def test_calcitonin_requires_context():
+    assert extract("Calcitonin level was checked.") == []
+
+    meds = extract("Calcitonin 200 units nasal daily.")
+    assert [med.drug for med in meds] == ["calcitonin"]
+
+
+def test_progesterone_requires_context():
+    assert extract("Progesterone level was drawn as part of fertility workup.") == []
+
+    meds = extract("Progesterone 200 mg vaginal nightly was started.")
+    assert [med.drug for med in meds] == ["progesterone"]
+
+
+def test_human_chorionic_gonadotropin_requires_context():
+    assert extract("hCG was negative.") == []
+
+    meds = extract("Human chorionic gonadotropin 10000 units IM was given.")
+    assert [med.drug for med in meds] == ["human chorionic gonadotropin"]
+
+
+def test_organism_species_names_are_never_matched_as_drugs():
+    text = "Blood cultures grew Escherichia coli and Enterococcus faecalis."
+
+    assert extract(text) == []
+    assert extract(text, mode="ingredients") == []
+
+
+def test_colistin_still_matches_after_organism_exclusion():
+    """colistin is a real antibiotic, historically named after Bacillus colistinus; it
+    must not be caught by the organism exclusion list, which matches full species names."""
+    meds = extract("colistin 2 million units IV q8h")
+
+    assert [med.drug for med in meds] == ["colistin"]
+
+
+def test_methyl_prednisolone_with_space_matches_as_one_drug():
+    text = "methyl prednisolone 125 mg IV once daily"
+
+    meds = extract(text)
+
+    assert len(meds) == 1
+    assert meds[0].drug == "methylprednisolone"
+    assert meds[0].strength == "125 mg"
+    assert meds[0].evidence == text
+    assert text[meds[0].start : meds[0].end] == text
+
+
+def test_methyl_hyphen_prednisolone_matches_as_one_drug():
+    text = "methyl-prednisolone 40 mg IV daily"
+
+    meds = extract(text)
+
+    assert len(meds) == 1
+    assert meds[0].drug == "methylprednisolone"
+    assert meds[0].strength == "40 mg"
+
+
+def test_has_context_true_when_dose_and_route_are_present():
+    meds = extract("lisinopril 10 mg PO daily")
+
+    assert meds[0].has_context is True
+
+
+def test_has_context_false_for_a_bare_mention_but_still_extracted():
+    """extract() must not lose recall for the live/API extractor: has_context is metadata
+    for the weak-label merge, not a filter on extract() itself."""
+    meds = extract("Patient has a history of lisinopril use.")
+
+    assert len(meds) == 1
+    assert meds[0].drug == "lisinopril"
+    assert meds[0].has_context is False
+
+
+def test_dose_before_drug_belongs_to_the_drug_it_precedes():
+    """A dose directly followed by a drug name belongs to that drug, never to the
+    previous one -- the common anesthesia-induction enumeration pattern."""
+    meds = extract("100 mg propofol, and 50 mg rocuronium")
+
+    assert [med.drug for med in meds] == ["propofol", "rocuronium"]
+    assert meds[0].strength == "100 mg"
+    assert meds[1].strength == "50 mg"
+
+
+def test_dose_before_drug_does_not_steal_the_next_drugs_dose():
+    meds = extract("200 mg propofol, 70 mg lidocaine")
+
+    assert [med.drug for med in meds] == ["propofol", "lidocaine"]
+    assert meds[0].strength == "200 mg"
+    assert meds[1].strength == "70 mg"
+
+
+def test_comma_grouped_strength_is_not_split():
+    meds = extract("heparin (25,000 units)")
+
+    assert meds[0].strength == "25,000 units"
+
+
+def test_comma_grouped_strength_with_mg_is_not_split():
+    meds = extract("ferrous sulfate 1,000 mg PO daily")
+
+    assert meds[0].strength == "1,000 mg"
+
+
+def test_diluent_volume_after_in_is_not_a_dosage():
+    """A volume stated as a diluent is never picked up as a dosage -- not because of a
+    dedicated diluent check (dose attribution is conservative enough that "250 mL" is
+    simply never adjacent to the drug), but the strength right after it still is."""
+    meds = extract("heparin 25,000 units in 250 mL D5W")
+
+    assert meds[0].strength == "25,000 units"
+    assert meds[0].dosage is None
+
+
+def test_dose_is_null_when_an_extra_word_sits_between_drug_and_dose():
+    """Dose attribution is conservative: "drip" is neither the drug's own route nor a
+    sanctioned connector ("(", "at", "of"), so the dose that follows is not this drug's,
+    even though nothing else in the sentence claims it either."""
+    meds = extract("heparin drip (25,000 units in 250 mL D5W)")
+
+    assert meds[0].strength is None
+    assert meds[0].dosage is None
+
+
+def test_frequency_thrice_daily_never_becomes_daily():
+    meds = extract("metronidazole (400 mg) thrice daily for 7 days")
+
+    assert meds[0].frequency.lower() == "thrice daily"
+
+
+def test_frequency_three_times_daily():
+    meds = extract("amoxicillin 500 mg three times daily")
+
+    assert meds[0].frequency.lower() == "three times daily"
+
+
+def test_frequency_once_a_day():
+    meds = extract("aspirin 100 mg once a day")
+
+    assert meds[0].frequency.lower() == "once a day"
+
+
+def test_frequency_n_times_per_day():
+    """ "per day" and "a day" are interchangeable; both numeral and word counts work."""
+    assert extract("tetrabenazine 12.5 mg two times per day")[0].frequency.lower() == (
+        "two times per day"
+    )
+    assert extract("tetrabenazine 12.5 mg three times per day")[0].frequency.lower() == (
+        "three times per day"
+    )
+
+
+def test_frequency_n_times_a_day():
+    meds = extract("ibuprofen 400 mg 4 times a day")
+
+    assert meds[0].frequency.lower() == "4 times a day"
+
+
+def test_frequency_every_n_h():
+    meds = extract("metoprolol 25 mg every 8 h")
+
+    assert meds[0].frequency.lower() == "every 8 h"
+
+
+def test_frequency_q_n_h_still_works():
+    meds = extract("metoprolol 25 mg q6h")
+
+    assert meds[0].frequency.lower() == "q6h"
+
+
+def test_frequency_slash_day_suffix_on_a_strength():
+    meds = extract("azathioprine 75 mg/day")
+
+    assert meds[0].strength == "75 mg"
+    assert meds[0].frequency == "/day"
+
+
+def test_frequency_slash_d_suffix_on_a_strength():
+    meds = extract("methylprednisolone 80 mg/d")
+
+    assert meds[0].strength == "80 mg"
+    assert meds[0].frequency == "/d"
+
+
+def test_frequency_slash_day_does_not_fire_inside_a_per_weight_per_day_strength():
+    """ "5 mg/kg/day" is one strength value; the trailing "/day" there is not a separate
+    frequency match (unlike a bare "mg/day" with no "/kg")."""
+    meds = extract("gentamicin 1 mg/kg/day IV daily")
+
+    assert meds[0].strength == "1 mg/kg/day"
+    assert meds[0].frequency.lower() == "daily"
+
+
+def test_strength_rate_unit_per_hour():
+    meds = extract("alteplase 0.5 mg/h infusion overnight")
+
+    assert meds[0].strength == "0.5 mg/h"
+
+
+def test_decimal_strength_and_per_weight_strength_still_work():
+    """Regression guard for the two forms the previous audit fixed."""
+    assert extract("amlodipine 0.5 mg PO daily")[0].strength == "0.5 mg"
+    assert extract("vancomycin 5 mg/kg IV q12h")[0].strength == "5 mg/kg"
+
+
+def test_tissue_plasminogen_activator_is_alteplase():
+    meds = extract("He was subsequently started on tissue plasminogen activator therapy.")
+
+    assert [med.drug for med in meds] == ["alteplase"]
+
+
+def test_tpa_abbreviation_is_alteplase():
+    meds = extract("He was started on tPA for the stroke.")
+
+    assert [med.drug for med in meds] == ["alteplase"]
+
+
+def test_bare_plasminogen_without_context_is_not_a_medication():
+    text = "A diagnosis was made based on plasminogen activator inhibitor levels."
+
+    assert extract(text) == []
+
+
+def test_gadolinium_is_excluded_as_a_diagnostic_agent():
+    assert extract("He received gadolinium injection for the MRI.") == []
+
+
+def test_fluorescein_is_excluded_as_a_diagnostic_agent():
+    assert extract("Fluorescein angiography revealed hypofluorescence.") == []
+
+
+def test_iodinated_contrast_agents_are_excluded():
+    assert extract("Iohexol contrast was administered for the CT scan.") == []
+    assert extract("He received iodixanol contrast for the angiogram.") == []
+
+
+def test_route_before_drug_belongs_to_the_drug_it_precedes():
+    """A route word directly before a drug name belongs to that drug, never to the
+    previous one -- the same rule as dose-before-drug, applied to routes."""
+    meds = extract("topical atropine, and oral prednisolone")
+
+    assert [med.drug for med in meds] == ["atropine", "prednisolone"]
+    assert meds[0].route == "topical"
+    assert meds[1].route == "oral"
+
+
+def test_route_after_an_unrelated_later_word_is_not_claimed():
+    """ "inhaled" describes "corticosteroids" (not itself a lexicon drug), not the earlier
+    "albuterol" -- a forward route match must be adjacent to the drug (or its own
+    strength/dosage), not just anywhere in the rest of the sentence."""
+    meds = extract("albuterol and occasional inhaled corticosteroids")
+
+    assert [med.drug for med in meds] == ["albuterol"]
+    assert meds[0].route is None
+
+
+def test_route_before_drug_with_no_other_attributes():
+    meds = extract("intramuscular lorazepam 1 mg")
+
+    assert meds[0].drug == "lorazepam"
+    assert meds[0].route == "intramuscular"
+
+
+def test_route_before_drug_with_strength_and_frequency_following():
+    meds = extract("oral prednisone 25 mg daily")
+
+    assert meds[0].drug == "prednisone"
+    assert meds[0].route == "oral"
+    assert meds[0].strength == "25 mg"
+    assert meds[0].frequency.lower() == "daily"
+
+
+def test_lab_value_phrase_is_not_a_medication():
+    assert extract("an elevated glucose value around 340 mg/dL") == []
+
+
+def test_lab_value_of_above_number_is_not_a_medication():
+    assert extract("lactate of above 15 mmol/L") == []
+
+
+def test_blood_urea_nitrogen_is_not_a_medication():
+    """ "blood urea nitrogen" (BUN) tokenizes across two ambiguous lexicon entries
+    ("urea", "nitrogen"); neither is a medication here."""
+    assert extract("a blood urea nitrogen of 13 mg/dl") == []
+
+
+def test_lab_level_of_drug_name_in_parens_is_not_a_medication():
+    assert extract("serum levels of immunoglobulin G (4435 mg/dL)") == []
+
+
+def test_bare_number_with_lab_unit_is_not_a_medication():
+    assert extract("sodium 138 mmol/L was normal") == []
+    assert extract("glucose 340 mg/dL on admission") == []
+
+
+def test_dose_of_drug_belongs_to_the_drug_it_precedes():
+    """ "NUMBER unit OF drugname" is the same dose-before-drug rule, with "of" as the
+    connector: the dose still belongs to the drug it's immediately attached to, never to
+    one named earlier."""
+    meds = extract("4 g of acetaminophen and 50 mg of tramadol")
+
+    assert [med.drug for med in meds] == ["acetaminophen", "tramadol"]
+    assert meds[0].strength == "4 g"
+    assert meds[1].strength == "50 mg"
+
+
+def test_strength_range_is_not_split_at_the_hyphen():
+    meds = extract("fluoxetine 40-60 mg/day")
+
+    assert meds[0].strength == "40-60 mg"
+    assert meds[0].frequency == "/day"
+
+
+def test_indocyanine_green_is_excluded_as_a_diagnostic_agent():
+    assert extract("Indocyanine green angiography showed good perfusion.") == []
+
+
+def test_methylene_blue_is_excluded_as_a_diagnostic_agent():
+    assert extract("Methylene blue was given for the perfusion study.") == []
+
+
+def test_isosulfan_blue_is_excluded_as_a_diagnostic_agent():
+    assert extract("The sentinel node was identified using isosulfan blue dye.") == []
+
+
+def test_illicit_substances_require_context_like_any_ambiguous_name():
+    assert extract("Urine toxicology was positive for cocaine use.") == []
+    assert extract("He has a history of heroin use.") == []
+    assert extract("Patient reported recent methamphetamine use.") == []
+
+    meds = extract("He was given cocaine 2 mg topically for the procedure.")
+    assert [med.drug for med in meds] == ["cocaine"]
+
+
+def test_dose_not_assigned_across_an_unrelated_drug_and_a_connector():
+    """Neither "PRN and" nor an intervening drug name is a sanctioned connector: the dose
+    belongs only to the drug it's directly adjacent to."""
+    meds = extract("standard bolus doses of morphine sulfate PRN and 1 g of IV acetaminophen")
+
+    assert [med.drug for med in meds] == ["morphine sulfate", "acetaminophen"]
+    assert meds[0].strength is None
+    assert meds[1].strength == "1 g"
+    assert meds[1].route == "IV"
+
+
+def test_rate_unit_per_minute_and_per_weight_per_minute():
+    meds = extract("300 mcg/min of phenylephrine, 5 mcg/kg/min of dobutamine")
+
+    assert [med.drug for med in meds] == ["phenylephrine", "dobutamine"]
+    assert meds[0].strength == "300 mcg/min"
+    assert meds[1].strength == "5 mcg/kg/min"
+
+
+def test_strength_per_body_surface_area():
+    meds = extract("doxorubicin (25 mg/m2 on days 1-3)")
+
+    assert meds[0].strength == "25 mg/m2"
+
+
+def test_blood_glucose_comma_lab_value_is_not_a_medication():
+    assert extract("blood glucose, 6.85 mmol/L") == []
+
+
+def test_oxygen_saturation_is_not_a_medication():
+    assert extract("Oxygen saturation was 97 percent on room air throughout the stay.") == []

@@ -18,6 +18,9 @@ class GroundingStats:
     ungrounded_values: int = 0
     rescued_drugs: int = 0
     parse_failures: int = 0
+    # Exact repeats (same normalized drug name, identical fields) collapsed to the first
+    # occurrence -- a generation loop can otherwise repeat one medication many times over.
+    duplicates_removed: int = 0
 
 
 def normalize(text: str) -> str:

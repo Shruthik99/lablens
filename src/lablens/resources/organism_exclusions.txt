@@ -1,0 +1,28 @@
+# Organism species names: RxNorm IN/PIN/BN terms that are never themselves a medication.
+#
+# Unlike ambiguity_list.txt, no surrounding clinical context can rescue these -- a culture
+# or sensitivity result naming a bacterium or fungus is never a prescribed drug. They are
+# dropped outright, in every lexicon mode, before the index is built.
+#
+# Real drugs that are etymologically named after an organism (e.g. colistin) are
+# deliberately absent: exclusion is by exact species name only, never a substring match.
+#
+# Every name below was verified to exist in RxNorm IN/PIN/BN (version 02-Nov-2026).
+# One name per line, lowercase. Blank lines and lines starting with # are ignored.
+
+escherichia coli
+clostridium botulinum
+clostridium perfringens
+clostridioides difficile
+enterococcus faecalis
+enterococcus faecium
+candida albicans
+candida parapsilosis
+candida tropicalis
+candida torresii
+streptococcus pneumoniae
+streptococcus thermophilus
+staphylococcus aureus
+klebsiella pneumoniae
+haemophilus influenzae
+pseudomonas aeruginosa
