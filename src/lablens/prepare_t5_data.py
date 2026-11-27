@@ -144,6 +144,11 @@ class MergeStats:
     rejected_not_in_rxnorm: int = 0
     rejected_examples: list[str] = field(default_factory=list)
     with_route: int = 0
+    # A rules-only medication (GPT-4 never mentioned it) kept only if a dose, route, or
+    # medication verb appears nearby -- see Medication.has_context. This count is how many
+    # were dropped for lacking that support; it does not affect extract_rules.extract()
+    # itself, only which rules-only medications become training labels.
+    rules_only_dropped_no_context: int = 0
 
 
 def _dedupe_rule_medications(rule_meds: list[Medication]) -> list[Medication]:
@@ -188,7 +193,17 @@ def _from_gpt_only(gpt_med: dict[str, str | None]) -> dict[str, str | None]:
     }
 
 
-def _from_rules_only(rule_med: Medication) -> dict[str, str | None]:
+def _from_rules_only(rule_med: Medication) -> dict[str, str | None] | None:
+    """Build a training-label record for a rules-only medication, or None to drop it.
+
+    GPT-4 never mentioned this drug, so unlike a rules match that's merged with or fills
+    in for a GPT-4 mention, there's no second source vouching for it: it's kept as a
+    training label only if a dose, route, or medication verb appears nearby (see
+    Medication.has_context). This is stricter than extract_rules.extract() itself, which
+    keeps it regardless -- that's deliberate here, training labels only.
+    """
+    if not rule_med.has_context:
+        return None
     return {
         "drug": rule_med.drug,
         "strength": rule_med.strength,
@@ -262,7 +277,12 @@ def merge_medications(
     for key, rule_med in by_name.items():
         if key in matched_keys:
             continue
-        merged.append(_from_rules_only(rule_med))
+        rules_only_med = _from_rules_only(rule_med)
+        if rules_only_med is None:
+            if stats is not None:
+                stats.rules_only_dropped_no_context += 1
+            continue
+        merged.append(rules_only_med)
         if stats is not None:
             stats.rules_only += 1
 
@@ -295,6 +315,13 @@ def _truncate_to_tokens(tokenizer, text: str, max_tokens: int) -> str:
     return tokenizer.decode(ids[:max_tokens], skip_special_tokens=True)
 
 
+def _fix_literal_newlines(text: str) -> str:
+    """Some notes store line breaks as a literal two-character "\\n" rather than an actual
+    newline; convert them so line-based extraction (lablens.extract_rules) sees real line
+    boundaries instead of treating the whole note as one line."""
+    return text.replace("\\n", "\n")
+
+
 def _iter_examples(
     n: int,
     seed: int,
@@ -316,11 +343,16 @@ def _iter_examples(
 
         gpt_meds = build_target_medications(row["summary"])
 
+        note_text = _fix_literal_newlines(row["note"])
         input_text = _truncate_to_tokens(
-            tokenizer, "extract medications: " + row["note"], _MAX_INPUT_TOKENS
+            tokenizer, "extract medications: " + note_text, _MAX_INPUT_TOKENS
         )
         gpt_meds = ground_target_medications(gpt_meds, input_text, stats)
-        rule_meds = extract_rules.extract(input_text, mode=_MERGE_LEXICON_MODE)
+
+        # Rules extractor runs on the note alone, without the T5 prefix: the prefix isn't
+        # part of the clinical text and only this call's line/sentence boundaries matter.
+        rules_text = _truncate_to_tokens(tokenizer, note_text, _MAX_INPUT_TOKENS)
+        rule_meds = extract_rules.extract(rules_text, mode=_MERGE_LEXICON_MODE)
 
         medications = merge_medications(gpt_meds, rule_meds, merge_stats)
         if not medications:
@@ -349,6 +381,10 @@ def _report(examples: list[dict[str, str]], stats: GroundingStats, merge_stats: 
     print(
         f"Medications per source — GPT-4 only: {merge_stats.gpt_only}, "
         f"rules only: {merge_stats.rules_only}, both: {merge_stats.both}"
+    )
+    print(
+        "Rules-only medications dropped (no supporting dose/route/verb context): "
+        f"{merge_stats.rules_only_dropped_no_context}"
     )
     if total_unique:
         print(

@@ -5,6 +5,7 @@ from lablens.extract_rules import LexiconEntry
 from lablens.grounding import GroundingStats
 from lablens.prepare_t5_data import (
     MergeStats,
+    _fix_literal_newlines,
     _project_for_target,
     _write_jsonl,
     build_target_medications,
@@ -323,7 +324,15 @@ def test_merge_rejects_gpt_only_drug_that_is_ambiguous_only(monkeypatch):
 
 def test_merge_keeps_rules_only_drug_and_counts_its_route(monkeypatch):
     monkeypatch.setattr(prepare_t5_data.extract_rules, "lookup", lambda name, mode=None: None)
-    rule_meds = [_med("amlodipine", strength="5 mg", route="oral", frequency="daily")]
+    rule_meds = [
+        _med(
+            "amlodipine",
+            strength="5 mg",
+            route="oral",
+            frequency="daily",
+            has_context=True,
+        )
+    ]
     stats = MergeStats()
 
     merged = merge_medications([], rule_meds, stats)
@@ -343,13 +352,36 @@ def test_merge_keeps_rules_only_drug_and_counts_its_route(monkeypatch):
     assert stats.with_route == 1
 
 
+def test_merge_drops_rules_only_drug_without_supporting_context(monkeypatch):
+    """GPT-4 never mentioned this drug, and the rules extractor found no dose, route, or
+    medication verb nearby -- unlike extract_rules.extract() itself, the weak-label merge
+    is stricter here and drops it rather than risk a training label from e.g. a problem
+    list or allergy mention."""
+    monkeypatch.setattr(prepare_t5_data.extract_rules, "lookup", lambda name, mode=None: None)
+    rule_meds = [_med("acetaminophen", has_context=False)]
+    stats = MergeStats()
+
+    merged = merge_medications([], rule_meds, stats)
+
+    assert merged == []
+    assert stats.rules_only == 0
+    assert stats.rules_only_dropped_no_context == 1
+
+
 def test_merge_dedupes_repeated_rule_mentions_keeping_the_first(monkeypatch):
     """The rules extractor finds a per-line match, so a drug mentioned on two lines
     (e.g. history and discharge meds) yields two Medication rows for one real drug."""
     monkeypatch.setattr(prepare_t5_data.extract_rules, "lookup", lambda name, mode=None: None)
     rule_meds = [
-        _med("metformin", strength="500 mg", start=0, end=9),
-        _med("metformin", strength="1000 mg", route="oral", start=20, end=29),
+        _med("metformin", strength="500 mg", start=0, end=9, has_context=True),
+        _med(
+            "metformin",
+            strength="1000 mg",
+            route="oral",
+            start=20,
+            end=29,
+            has_context=True,
+        ),
     ]
 
     merged = merge_medications([], rule_meds)
@@ -395,3 +427,18 @@ def test_project_for_target_drops_sources_but_keeps_dosage_and_route():
     assert linearize_medications(projected) == (
         "drug: metformin | strength: 500 mg | dosage: 1 tablet | route: oral | frequency: daily"
     )
+
+
+def test_fix_literal_newlines_converts_the_two_character_escape():
+    text = "Lisinopril 10mg daily.\\nMetformin 500mg BID"
+
+    fixed = _fix_literal_newlines(text)
+
+    assert fixed == "Lisinopril 10mg daily.\nMetformin 500mg BID"
+    assert "\\n" not in fixed
+
+
+def test_fix_literal_newlines_leaves_real_newlines_alone():
+    text = "Lisinopril 10mg daily.\nMetformin 500mg BID"
+
+    assert _fix_literal_newlines(text) == text

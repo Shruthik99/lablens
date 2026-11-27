@@ -74,3 +74,16 @@ creatine
 
 # Brand names that collide with ordinary English
 today
+perform
+thrive
+
+# Chemicals/hormones that are also lab panel or industrial terms
+propylene
+calcitonin
+human chorionic gonadotropin
+progesterone
+
+# Blood/clotting proteins named in labs (e.g. "plasminogen activator inhibitor"), not
+# themselves administered -- the drug sense ("tissue plasminogen activator"/"tPA") is
+# aliased to alteplase before lexicon lookup, see _COMPOUND_TOKEN_MERGES.
+plasminogen
