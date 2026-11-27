@@ -21,3 +21,8 @@ iopromide
 iothalamate
 ioversol
 ioxaglate
+
+# Surgical/lymphatic imaging dyes (sentinel node mapping, perfusion assessment)
+indocyanine green
+methylene blue
+isosulfan blue

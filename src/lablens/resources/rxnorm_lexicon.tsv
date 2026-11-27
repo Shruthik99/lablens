@@ -5587,7 +5587,7 @@ cobenfy	2694844	BN	0	rxnorm	02-Nov-2026
 cobicistat	1306284	IN	0	rxnorm	02-Nov-2026
 cobimetinib	1722365	IN	0	rxnorm	02-Nov-2026
 cobimetinib fumarate	1722380	PIN	0	rxnorm	02-Nov-2026
-cocaine	2653	IN	0	rxnorm	02-Nov-2026
+cocaine	2653	IN	1	rxnorm	02-Nov-2026
 cocaine esterase	2463110	IN	0	rxnorm	02-Nov-2026
 cocaine hydrochloride	81985	PIN	0	rxnorm	02-Nov-2026
 cocamide	1739005	IN	0	rxnorm	02-Nov-2026
@@ -10300,7 +10300,7 @@ hericium americanum whole extract	2359933	IN	0	rxnorm	02-Nov-2026
 hericium erinaceus fruiting body extract	2631132	IN	0	rxnorm	02-Nov-2026
 herklin	1988405	BN	0	rxnorm	02-Nov-2026
 hernexeos	2721610	BN	0	rxnorm	02-Nov-2026
-heroin	3304	IN	0	rxnorm	02-Nov-2026
+heroin	3304	IN	1	rxnorm	02-Nov-2026
 heroin hydrochloride	81994	PIN	0	rxnorm	02-Nov-2026
 herpesvirus 1, human	1316105	IN	0	rxnorm	02-Nov-2026
 herpesvirus 2, human	1318479	IN	0	rxnorm	02-Nov-2026
@@ -13632,7 +13632,7 @@ methadone hydrochloride	218337	PIN	0	rxnorm	02-Nov-2026
 methadose	152751	BN	0	rxnorm	02-Nov-2026
 methadyl acetate	6814	IN	0	rxnorm	02-Nov-2026
 methagual	1088954	BN	0	rxnorm	02-Nov-2026
-methamphetamine	6816	IN	0	rxnorm	02-Nov-2026
+methamphetamine	6816	IN	1	rxnorm	02-Nov-2026
 methamphetamine hydrochloride	82044	PIN	0	rxnorm	02-Nov-2026
 methampicillin	29629	IN	0	rxnorm	02-Nov-2026
 methampicillin sodium	273443	PIN	0	rxnorm	02-Nov-2026

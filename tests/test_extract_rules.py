@@ -675,3 +675,65 @@ def test_route_before_drug_with_strength_and_frequency_following():
     assert meds[0].route == "oral"
     assert meds[0].strength == "25 mg"
     assert meds[0].frequency.lower() == "daily"
+
+
+def test_lab_value_phrase_is_not_a_medication():
+    assert extract("an elevated glucose value around 340 mg/dL") == []
+
+
+def test_lab_value_of_above_number_is_not_a_medication():
+    assert extract("lactate of above 15 mmol/L") == []
+
+
+def test_blood_urea_nitrogen_is_not_a_medication():
+    """ "blood urea nitrogen" (BUN) tokenizes across two ambiguous lexicon entries
+    ("urea", "nitrogen"); neither is a medication here."""
+    assert extract("a blood urea nitrogen of 13 mg/dl") == []
+
+
+def test_lab_level_of_drug_name_in_parens_is_not_a_medication():
+    assert extract("serum levels of immunoglobulin G (4435 mg/dL)") == []
+
+
+def test_bare_number_with_lab_unit_is_not_a_medication():
+    assert extract("sodium 138 mmol/L was normal") == []
+    assert extract("glucose 340 mg/dL on admission") == []
+
+
+def test_dose_of_drug_belongs_to_the_drug_it_precedes():
+    """ "NUMBER unit OF drugname" is the same dose-before-drug rule, with "of" as the
+    connector: the dose still belongs to the drug it's immediately attached to, never to
+    one named earlier."""
+    meds = extract("4 g of acetaminophen and 50 mg of tramadol")
+
+    assert [med.drug for med in meds] == ["acetaminophen", "tramadol"]
+    assert meds[0].strength == "4 g"
+    assert meds[1].strength == "50 mg"
+
+
+def test_strength_range_is_not_split_at_the_hyphen():
+    meds = extract("fluoxetine 40-60 mg/day")
+
+    assert meds[0].strength == "40-60 mg"
+    assert meds[0].frequency == "/day"
+
+
+def test_indocyanine_green_is_excluded_as_a_diagnostic_agent():
+    assert extract("Indocyanine green angiography showed good perfusion.") == []
+
+
+def test_methylene_blue_is_excluded_as_a_diagnostic_agent():
+    assert extract("Methylene blue was given for the perfusion study.") == []
+
+
+def test_isosulfan_blue_is_excluded_as_a_diagnostic_agent():
+    assert extract("The sentinel node was identified using isosulfan blue dye.") == []
+
+
+def test_illicit_substances_require_context_like_any_ambiguous_name():
+    assert extract("Urine toxicology was positive for cocaine use.") == []
+    assert extract("He has a history of heroin use.") == []
+    assert extract("Patient reported recent methamphetamine use.") == []
+
+    meds = extract("He was given cocaine 2 mg topically for the procedure.")
+    assert [med.drug for med in meds] == ["cocaine"]

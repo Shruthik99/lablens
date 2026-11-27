@@ -87,3 +87,10 @@ progesterone
 # themselves administered -- the drug sense ("tissue plasminogen activator"/"tPA") is
 # aliased to alteplase before lexicon lookup, see _COMPOUND_TOKEN_MERGES.
 plasminogen
+
+# Illicit substances: almost always named in a social/substance-use-history or toxicology
+# sense ("urine tox positive for cocaine"), essentially never a prescribed medication --
+# flagged so a bare mention needs the same dose/route/verb context any other drug would.
+cocaine
+heroin
+methamphetamine

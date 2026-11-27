@@ -15,8 +15,12 @@ logger = logging.getLogger(__name__)
 # A plain number, or a comma-grouped one ("25,000", "1,000"); either may carry a decimal.
 _NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 
+# A dose range ("40-60 mg"), or just a single number -- the whole range is the strength,
+# not only its second half (what a bare _NUMBER would match, the hyphen breaking it).
+_NUMBER_RANGE = rf"(?:{_NUMBER})(?:\s*-\s*(?:{_NUMBER}))?"
+
 _STRENGTH_RE = re.compile(
-    rf"\b(?:{_NUMBER})\s*(?:mg|mcg|g|units?)"
+    rf"\b(?:{_NUMBER_RANGE})\s*(?:mg|mcg|g|units?)"
     rf"(?:\s*/\s*(?:(?:{_NUMBER})\s*(?:ml|mg)|kg(?:\s*/\s*day)?|h(?:r)?))?\b",
     re.IGNORECASE,
 )
@@ -65,12 +69,30 @@ _DILUENT_VOLUME_RE = re.compile(r"\bin\s*\Z", re.IGNORECASE)
 # A decimal point ("0.5 mg") is never followed by whitespace, so it is never a false split.
 _SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?])\s+")
 
+# A lab concentration unit, as opposed to a dose: "mg/dL", "mmol/L", "g/dL", "ng/mL",
+# "mIU/mL". Distinct from _STRENGTH_RE's units, which are per-dose, not per-volume.
+_LAB_UNIT_RE = r"(?:mg|mmol|g|ng|miu)\s*/\s*(?:dl|ml|l)"
+
 # Drug mentions in a lab/test context, never a medication regardless of ambiguity flag:
-# a result ("sodium level"), a receptor name ("insulin receptor"), a resistance profile
-# ("penicillin-resistant"), or a lab panel prefix ("serum digoxin").
-_LAB_SUFFIX_RE = re.compile(r"\A[\s-]*(?:level|receptors?|resistant)\b", re.IGNORECASE)
-_LAB_PREFIX_RE = re.compile(r"\bserum\s*\Z", re.IGNORECASE)
-_LAB_CONTEXT_CHARS = 20
+# a result ("sodium level", "glucose value", "lactate of above 15 mmol/L"), a receptor
+# name ("insulin receptor"), a resistance profile ("penicillin-resistant"), a number in a
+# lab unit directly after the name ("glucose 340 mg/dL"), or a lab panel prefix ("serum
+# digoxin", "levels of immunoglobulin G").
+_LAB_SUFFIX_RE = re.compile(
+    rf"\A[\s(-]*(?:level|receptors?|resistant|values?|"
+    rf"of\s+(?:(?:above|below|around|approximately|over|under)\s+)?(?:{_NUMBER})|"
+    rf"(?:{_NUMBER})\s*{_LAB_UNIT_RE})\b",
+    re.IGNORECASE,
+)
+_LAB_PREFIX_RE = re.compile(r"\b(?:serum|levels?\s+of|values?\s+of)\s*\Z", re.IGNORECASE)
+_LAB_CONTEXT_CHARS = 30
+
+# "blood urea nitrogen" (BUN): a lab test name, never a medication, that happens to
+# tokenize across two ambiguous lexicon entries ("urea", "nitrogen"). Checked as its own
+# phrase (both sides must match) rather than folded into the suffix/prefix alternatives
+# above, since neither "blood" nor "nitrogen" alone implies a lab context.
+_BUN_PREFIX_RE = re.compile(r"\bblood\s*\Z", re.IGNORECASE)
+_BUN_SUFFIX_RE = re.compile(r"\A\s*nitrogen\b", re.IGNORECASE)
 
 # Dose units for the ambiguity gate only, kept separate from _STRENGTH_RE so widening it
 # cannot change extracted field values. The ambiguous names are mostly electrolytes, which
@@ -430,7 +452,11 @@ def _apply_lab_context_filter(
     for entry, drug, start, end in matches:
         after = line[end : end + _LAB_CONTEXT_CHARS]
         before = line[max(0, start - _LAB_CONTEXT_CHARS) : start]
-        if _LAB_SUFFIX_RE.search(after) or _LAB_PREFIX_RE.search(before):
+        if (
+            _LAB_SUFFIX_RE.search(after)
+            or _LAB_PREFIX_RE.search(before)
+            or (_BUN_PREFIX_RE.search(before) and _BUN_SUFFIX_RE.search(after))
+        ):
             logger.debug("name %r dropped: lab/test context", drug)
             continue
         kept.append((entry, drug, start, end))
@@ -456,11 +482,16 @@ def _sentence_start(line: str, pos: int) -> int:
 
 # A strength/dosage/route match that reaches the very end of the text it's searched
 # against -- used to find an attribute that directly precedes a drug name, e.g. "100 mg
-# propofol" or "topical atropine": that attribute belongs to the following drug, never to
-# one mentioned earlier in the same sentence.
-_PRECEDING_STRENGTH_RE = re.compile(_STRENGTH_RE.pattern + r"\s*\Z", re.IGNORECASE)
-_PRECEDING_DOSAGE_RE = re.compile(_DOSAGE_RE.pattern + r"\s*\Z", re.IGNORECASE)
-_PRECEDING_ROUTE_RE = re.compile(_ROUTE_RE.pattern + r"\s*\Z", re.IGNORECASE)
+# propofol", "topical atropine", or "4 g of acetaminophen": that attribute belongs to the
+# following drug, never to one mentioned earlier in the same sentence. The "value" group
+# isolates the attribute itself from the optional trailing "of" ("4 g" rather than "4 g
+# of"); strength/dosage allow it ("NUMBER unit of DRUG" is a common dosing phrasing),
+# route does not ("topical of atropine" is not idiomatic).
+_PRECEDING_STRENGTH_RE = re.compile(
+    rf"(?P<value>{_STRENGTH_RE.pattern})\s*(?:of\s*)?\Z", re.IGNORECASE
+)
+_PRECEDING_DOSAGE_RE = re.compile(rf"(?P<value>{_DOSAGE_RE.pattern})\s*(?:of\s*)?\Z", re.IGNORECASE)
+_PRECEDING_ROUTE_RE = re.compile(rf"(?P<value>{_ROUTE_RE.pattern})\s*\Z", re.IGNORECASE)
 
 # A route immediately after a drug's own name (optionally after its own strength/dosage,
 # e.g. "lisinopril 10 mg PO") belongs to that drug. Anchored at the very start of the text
@@ -531,7 +562,7 @@ def _preceding_attributes(
             match = pattern.search(gap_text)
             if match is None:
                 continue
-            field[i] = match.group(0).rstrip()
+            field[i] = match.group("value")
             match_start = gap_start + match.start()
             claim_start = match_start if claim_start is None else min(claim_start, match_start)
 
