@@ -69,6 +69,35 @@ def test_drops_drug_not_grounded_in_text(mock_load):
 
 
 @patch("lablens.extract_t5._load_model")
+def test_parses_dosage_and_route_and_grounds_them(mock_load):
+    mock_load.return_value = _fake_model(
+        "drug: aspirin | strength: 81 mg | dosage: 1 tablet | route: oral | frequency: daily"
+    )
+
+    medications = extract("Aspirin 81 mg, 1 tablet, oral, daily")
+
+    assert len(medications) == 1
+    med = medications[0]
+    assert med.dosage == "1 tablet"
+    assert med.route == "oral"
+
+
+@patch("lablens.extract_t5._load_model")
+def test_nulls_ungrounded_dosage_and_route_without_dropping_drug(mock_load):
+    mock_load.return_value = _fake_model(
+        "drug: aspirin | strength: 81 mg | dosage: 2 tablets | route: topical"
+    )
+    stats = GroundingStats()
+
+    medications = extract("Aspirin 81 mg, 1 tablet, oral, daily", stats=stats)
+
+    assert len(medications) == 1
+    assert medications[0].dosage is None
+    assert medications[0].route is None
+    assert stats.ungrounded_values == 2
+
+
+@patch("lablens.extract_t5._load_model")
 def test_nulls_ungrounded_field_without_dropping_drug(mock_load):
     mock_load.return_value = _fake_model("drug: ibuprofen | strength: 801 mg | frequency: TID")
     stats = GroundingStats()

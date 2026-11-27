@@ -222,6 +222,17 @@ def lexicon_size(mode: str = DEFAULT_LEXICON_MODE) -> int:
     return len(_get_index(mode))
 
 
+def lookup(name: str, mode: str = DEFAULT_LEXICON_MODE) -> LexiconEntry | None:
+    """Look up a single name in a mode's lexicon index by its tokenized form.
+
+    For callers that have a drug name from elsewhere (e.g. a weak-label source) and need
+    its RxNorm provenance/ambiguity flag, without running full extraction over a note.
+    """
+    index = _get_index(_check_mode(mode))
+    key = tuple(token for token, _, _ in _tokenize(name))
+    return index.entries.get(key)
+
+
 def _lexicon_filename(mode: str) -> str:
     return "drug_lexicon.txt" if _check_mode(mode) == HANDWRITTEN else "rxnorm_lexicon.tsv"
 

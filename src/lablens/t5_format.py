@@ -5,8 +5,9 @@ tests/test_t5_format.py), so a JSON target can never be learned or reproduced lo
 This format uses only characters the tokenizer round-trips exactly: letters, digits,
 ":", "|", ";", and single spaces (no newlines, which SentencePiece may normalize).
 
-Grammar: "drug: <drug> | strength: <s> | frequency: <f> | duration: <d> ; drug: ..."
-Null fields are omitted; an empty medication list is the literal string "none".
+Grammar: "drug: <drug> | strength: <s> | dosage: <ds> | route: <r> | frequency: <f> |
+duration: <d> ; drug: ..." Null fields are omitted; an empty medication list is the
+literal string "none".
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ NONE_TARGET = "none"
 FIELD_SEP = " | "
 MED_SEP = " ; "
 _DRUG_PREFIX = "drug: "
-_OPTIONAL_FIELDS = ("strength", "frequency", "duration")
+_OPTIONAL_FIELDS = ("strength", "dosage", "route", "frequency", "duration")
 
 
 def linearize_medications(medications: list[dict[str, str | None]]) -> str:
@@ -54,6 +55,8 @@ def parse_medications(text: str) -> list[dict[str, str | None]] | None:
         med: dict[str, str | None] = {
             "drug": drug,
             "strength": None,
+            "dosage": None,
+            "route": None,
             "frequency": None,
             "duration": None,
         }

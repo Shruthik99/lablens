@@ -73,6 +73,8 @@ def extract(
             Medication(
                 drug=item["drug"],
                 strength=ground_value(item.get("strength"), line, stats),
+                dosage=ground_value(item.get("dosage"), line, stats),
+                route=ground_value(item.get("route"), line, stats),
                 frequency=ground_value(item.get("frequency"), line, stats),
                 duration=ground_value(item.get("duration"), line, stats),
                 evidence=line,

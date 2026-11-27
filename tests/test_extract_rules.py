@@ -3,7 +3,7 @@ import logging
 import pytest
 
 from lablens import extract_rules
-from lablens.extract_rules import extract
+from lablens.extract_rules import extract, lookup
 
 
 def test_single_drug_all_fields():
@@ -307,3 +307,23 @@ def test_debug_logging_captures_drug_match(caplog):
         extract(text)
 
     assert any("lisinopril" in record.getMessage() for record in caplog.records)
+
+
+def test_lookup_returns_entry_for_a_known_ingredient():
+    entry = lookup("lisinopril", mode="ingredients")
+
+    assert entry is not None
+    assert entry.rxcui == "29046"
+    assert entry.tty == "IN"
+    assert entry.ambiguous is False
+
+
+def test_lookup_returns_none_for_an_unknown_name():
+    assert lookup("not-a-real-drug-xyz") is None
+
+
+def test_lookup_flags_an_ambiguous_entry():
+    entry = lookup("iron", mode="ingredients")
+
+    assert entry is not None
+    assert entry.ambiguous is True
