@@ -19,9 +19,16 @@ _NUMBER = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?"
 # not only its second half (what a bare _NUMBER would match, the hyphen breaking it).
 _NUMBER_RANGE = rf"(?:{_NUMBER})(?:\s*-\s*(?:{_NUMBER}))?"
 
+# A per-weight or per-area base ("kg", "m2"), optionally further divided by a time period
+# ("/kg/day", "/kg/min", "/m2/day"); or a bare rate period alone ("/h", "/min"). Bare
+# "/day" is deliberately excluded here -- unlike a rate, it's a dosing frequency ("once a
+# day"), not part of the dose, and FREQUENCY_RE's "(?<!kg)/\s*d(?:ay)?" captures it there.
+# Covers "5 mg/kg", "1 mg/kg/day", "5 mcg/kg/min", "25 mg/m2", "0.5 mg/h", "300 mcg/min".
+_RATE_UNIT = r"(?:kg|m2)(?:\s*/\s*(?:day|min|h(?:r)?))?|min|h(?:r)?"
+
 _STRENGTH_RE = re.compile(
     rf"\b(?:{_NUMBER_RANGE})\s*(?:mg|mcg|g|units?)"
-    rf"(?:\s*/\s*(?:(?:{_NUMBER})\s*(?:ml|mg)|kg(?:\s*/\s*day)?|h(?:r)?))?\b",
+    rf"(?:\s*/\s*(?:(?:{_NUMBER})\s*(?:ml|mg)|{_RATE_UNIT}))?\b",
     re.IGNORECASE,
 )
 
@@ -61,10 +68,6 @@ _DOSAGE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# A volume stated as a diluent ("25,000 units in 250 mL D5W") is not a dosage -- the
-# drug's own dose is the strength, not how much fluid it was mixed into.
-_DILUENT_VOLUME_RE = re.compile(r"\bin\s*\Z", re.IGNORECASE)
-
 # Sentence boundary for the attribute window only: punctuation followed by whitespace.
 # A decimal point ("0.5 mg") is never followed by whitespace, so it is never a false split.
 _SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?])\s+")
@@ -74,12 +77,14 @@ _SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?])\s+")
 _LAB_UNIT_RE = r"(?:mg|mmol|g|ng|miu)\s*/\s*(?:dl|ml|l)"
 
 # Drug mentions in a lab/test context, never a medication regardless of ambiguity flag:
-# a result ("sodium level", "glucose value", "lactate of above 15 mmol/L"), a receptor
-# name ("insulin receptor"), a resistance profile ("penicillin-resistant"), a number in a
-# lab unit directly after the name ("glucose 340 mg/dL"), or a lab panel prefix ("serum
-# digoxin", "levels of immunoglobulin G").
+# a result ("sodium level", "glucose value", "lactate of above 15 mmol/L", "blood glucose,
+# 6.85 mmol/L"), a vital-sign reading ("oxygen saturation"), a receptor name ("insulin
+# receptor"), a resistance profile ("penicillin-resistant"), a number in a lab unit
+# directly after the name ("glucose 340 mg/dL"), or a lab panel prefix ("serum digoxin",
+# "levels of immunoglobulin G"). The leading "[\s(,-]*" skips a comma before the number
+# ("glucose, 6.85 mmol/L"), not just whitespace/parens/hyphen.
 _LAB_SUFFIX_RE = re.compile(
-    rf"\A[\s(-]*(?:level|receptors?|resistant|values?|"
+    rf"\A[\s(,-]*(?:level|receptors?|resistant|values?|saturation|"
     rf"of\s+(?:(?:above|below|around|approximately|over|under)\s+)?(?:{_NUMBER})|"
     rf"(?:{_NUMBER})\s*{_LAB_UNIT_RE})\b",
     re.IGNORECASE,
@@ -480,55 +485,56 @@ def _sentence_start(line: str, pos: int) -> int:
     return start
 
 
-# A strength/dosage/route match that reaches the very end of the text it's searched
-# against -- used to find an attribute that directly precedes a drug name, e.g. "100 mg
-# propofol", "topical atropine", or "4 g of acetaminophen": that attribute belongs to the
-# following drug, never to one mentioned earlier in the same sentence. The "value" group
-# isolates the attribute itself from the optional trailing "of" ("4 g" rather than "4 g
-# of"); strength/dosage allow it ("NUMBER unit of DRUG" is a common dosing phrasing),
-# route does not ("topical of atropine" is not idiomatic).
+# Dose attribution is conservative: a strength/dosage/route is assigned to a drug only
+# when it's directly adjacent, nothing else (no other drug, "and", or comma-separated
+# item) sitting in between. Two directions, each anchored so only the sanctioned
+# connectors below can appear between the drug and the attribute:
+#
+# PRECEDING ("100 mg propofol", "topical atropine", "4 g of acetaminophen", "1 g of IV
+# acetaminophen"): the attribute must reach the very end of the text it's searched
+# against (the gap right before the drug). Strength/dosage allow an "of" and then a route
+# word ("of IV"); route does not ("topical of atropine" is not idiomatic). The "value"
+# group isolates the attribute from that optional trailing connector.
+#
+# FORWARD ("lisinopril 10 mg", "drug (500 mg)", "drug at 100 mg", "Inhaler 2 puffs"): the
+# attribute must start at the very beginning of the text it's searched against (the text
+# right after the drug), modulo an opening "(", "at", or -- for strength/dosage only --
+# the drug's own route word (so a route stated before the dose doesn't block it; route
+# itself allows a strength/dosage first, for the same reason in the other order).
 _PRECEDING_STRENGTH_RE = re.compile(
-    rf"(?P<value>{_STRENGTH_RE.pattern})\s*(?:of\s*)?\Z", re.IGNORECASE
+    rf"(?P<value>{_STRENGTH_RE.pattern})\s*(?:of\s*)?(?:{_ROUTE_RE.pattern}\s*)?\Z",
+    re.IGNORECASE,
 )
-_PRECEDING_DOSAGE_RE = re.compile(rf"(?P<value>{_DOSAGE_RE.pattern})\s*(?:of\s*)?\Z", re.IGNORECASE)
+_PRECEDING_DOSAGE_RE = re.compile(
+    rf"(?P<value>{_DOSAGE_RE.pattern})\s*(?:of\s*)?(?:{_ROUTE_RE.pattern}\s*)?\Z",
+    re.IGNORECASE,
+)
 _PRECEDING_ROUTE_RE = re.compile(rf"(?P<value>{_ROUTE_RE.pattern})\s*\Z", re.IGNORECASE)
 
-# A route immediately after a drug's own name (optionally after its own strength/dosage,
-# e.g. "lisinopril 10 mg PO") belongs to that drug. Anchored at the very start of the text
-# it's searched against (the text right after the drug match) so a route describing some
-# later, unrelated word ("albuterol and occasional inhaled corticosteroids") is not picked
-# up just because it's somewhere in the forward window.
+_FORWARD_STRENGTH_RE = re.compile(
+    rf"\A[\s(]*(?:at\s+)?(?:{_ROUTE_RE.pattern}\s+)?(?P<value>{_STRENGTH_RE.pattern})",
+    re.IGNORECASE,
+)
+_FORWARD_DOSAGE_RE = re.compile(
+    rf"\A[\s(]*(?:at\s+)?(?:{_ROUTE_RE.pattern}\s+)?(?P<value>{_DOSAGE_RE.pattern})",
+    re.IGNORECASE,
+)
 _FORWARD_ROUTE_RE = re.compile(
-    rf"\A\s*(?:{_STRENGTH_RE.pattern}|{_DOSAGE_RE.pattern})?\s*(?P<route>{_ROUTE_RE.pattern})",
+    rf"\A\s*(?:{_STRENGTH_RE.pattern}|{_DOSAGE_RE.pattern})?\s*(?P<value>{_ROUTE_RE.pattern})",
     re.IGNORECASE,
 )
 
 
+def _forward_match(pattern: re.Pattern[str], text_after_drug: str) -> str | None:
+    match = pattern.search(text_after_drug)
+    return match.group("value") if match else None
+
+
 def _first_match(pattern: re.Pattern[str], line: str) -> str | None:
+    """Frequency/duration are not subject to the strength/dosage/route adjacency rule
+    above: they're searched anywhere in the attribute window, as before."""
     match = pattern.search(line)
     return match.group(0) if match else None
-
-
-def _dosage_match(segment: str) -> str | None:
-    """Like _first_match(_DOSAGE_RE, segment), but a volume given as a diluent ("...units
-    in 250 mL D5W") is not a dosage -- the drug's own dose is the strength, not how much
-    fluid it was mixed into. Scoped to "ml": puffs/tablets/capsules/drops don't describe
-    a diluent volume, so "given in 2 tablets" (if it ever occurs) is unaffected."""
-    match = _DOSAGE_RE.search(segment)
-    if match is None:
-        return None
-    if match.group(0).lower().endswith("ml") and _DILUENT_VOLUME_RE.search(
-        segment[: match.start()]
-    ):
-        return None
-    return match.group(0)
-
-
-def _forward_route_match(text_after_drug: str) -> str | None:
-    """A route immediately after the drug (optionally after its own strength/dosage),
-    anchored so a route describing a later, unrelated word is never picked up."""
-    match = _FORWARD_ROUTE_RE.search(text_after_drug)
-    return match.group("route") if match else None
 
 
 def _preceding_attributes(
@@ -613,13 +619,17 @@ def extract(text: str, mode: str = DEFAULT_LEXICON_MODE) -> list[Medication]:
             logger.debug("drug match: %r at [%d, %d)", drug, segment_start, segment_end)
             logger.debug("attribute window: %r", segment)
 
-            strength = preceding_strengths.get(i) or _first_match(_STRENGTH_RE, segment)
+            text_after_drug = line[drug_end:segment_end]
+
+            strength = preceding_strengths.get(i) or _forward_match(
+                _FORWARD_STRENGTH_RE, text_after_drug
+            )
             logger.debug("strength: %s", strength or "not found")
 
-            dosage = preceding_dosages.get(i) or _dosage_match(segment)
+            dosage = preceding_dosages.get(i) or _forward_match(_FORWARD_DOSAGE_RE, text_after_drug)
             logger.debug("dosage: %s", dosage or "not found")
 
-            route = preceding_routes.get(i) or _forward_route_match(line[drug_end:segment_end])
+            route = preceding_routes.get(i) or _forward_match(_FORWARD_ROUTE_RE, text_after_drug)
             logger.debug("route: %s", route or "not found")
 
             frequency = _first_match(_FREQUENCY_RE, segment)

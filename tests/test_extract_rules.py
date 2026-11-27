@@ -511,7 +511,7 @@ def test_dose_before_drug_does_not_steal_the_next_drugs_dose():
 
 
 def test_comma_grouped_strength_is_not_split():
-    meds = extract("heparin drip (25,000 units in 250 mL D5W)")
+    meds = extract("heparin (25,000 units)")
 
     assert meds[0].strength == "25,000 units"
 
@@ -523,9 +523,22 @@ def test_comma_grouped_strength_with_mg_is_not_split():
 
 
 def test_diluent_volume_after_in_is_not_a_dosage():
-    meds = extract("heparin drip (25,000 units in 250 mL D5W)")
+    """A volume stated as a diluent is never picked up as a dosage -- not because of a
+    dedicated diluent check (dose attribution is conservative enough that "250 mL" is
+    simply never adjacent to the drug), but the strength right after it still is."""
+    meds = extract("heparin 25,000 units in 250 mL D5W")
 
     assert meds[0].strength == "25,000 units"
+    assert meds[0].dosage is None
+
+
+def test_dose_is_null_when_an_extra_word_sits_between_drug_and_dose():
+    """Dose attribution is conservative: "drip" is neither the drug's own route nor a
+    sanctioned connector ("(", "at", "of"), so the dose that follows is not this drug's,
+    even though nothing else in the sentence claims it either."""
+    meds = extract("heparin drip (25,000 units in 250 mL D5W)")
+
+    assert meds[0].strength is None
     assert meds[0].dosage is None
 
 
@@ -737,3 +750,36 @@ def test_illicit_substances_require_context_like_any_ambiguous_name():
 
     meds = extract("He was given cocaine 2 mg topically for the procedure.")
     assert [med.drug for med in meds] == ["cocaine"]
+
+
+def test_dose_not_assigned_across_an_unrelated_drug_and_a_connector():
+    """Neither "PRN and" nor an intervening drug name is a sanctioned connector: the dose
+    belongs only to the drug it's directly adjacent to."""
+    meds = extract("standard bolus doses of morphine sulfate PRN and 1 g of IV acetaminophen")
+
+    assert [med.drug for med in meds] == ["morphine sulfate", "acetaminophen"]
+    assert meds[0].strength is None
+    assert meds[1].strength == "1 g"
+    assert meds[1].route == "IV"
+
+
+def test_rate_unit_per_minute_and_per_weight_per_minute():
+    meds = extract("300 mcg/min of phenylephrine, 5 mcg/kg/min of dobutamine")
+
+    assert [med.drug for med in meds] == ["phenylephrine", "dobutamine"]
+    assert meds[0].strength == "300 mcg/min"
+    assert meds[1].strength == "5 mcg/kg/min"
+
+
+def test_strength_per_body_surface_area():
+    meds = extract("doxorubicin (25 mg/m2 on days 1-3)")
+
+    assert meds[0].strength == "25 mg/m2"
+
+
+def test_blood_glucose_comma_lab_value_is_not_a_medication():
+    assert extract("blood glucose, 6.85 mmol/L") == []
+
+
+def test_oxygen_saturation_is_not_a_medication():
+    assert extract("Oxygen saturation was 97 percent on room air throughout the stay.") == []
